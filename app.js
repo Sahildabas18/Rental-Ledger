@@ -2528,12 +2528,20 @@ async function handleDeleteUtility() {
 }
 
 // -----------------------------------------------------------------------------
-// Window Resize & Chart Redraw
+// Window Resize & Orientation Change (Chart Redraw on iPhone 11)
 // -----------------------------------------------------------------------------
 window.addEventListener("resize", () => {
   if (state.currentView === "dashboard") {
     renderCanvasChart();
   }
+});
+
+window.addEventListener("orientationchange", () => {
+  setTimeout(() => {
+    if (state.currentView === "dashboard") {
+      renderCanvasChart();
+    }
+  }, 150);
 });
 
 // Boot the application

@@ -2402,178 +2402,560 @@ body.theme-light .toast {
 
 
 /* ==========================================================================
-   Progressive Web App (PWA) & iOS Mobile Styles
-   Optimized for iPhone Safari, Dynamic Island, Notch & Touch Gestures
+   iPhone 11 & iOS Native PWA Experience System
+   Tailored for 414x896pt Viewport (19.5:9 Aspect Ratio), Dynamic Notch & Touch
    ========================================================================== */
 
 :root {
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 48px);
+  --safe-bottom: env(safe-area-inset-bottom, 34px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+  --ios-spring: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 body {
-  padding-top: var(--safe-top);
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-@media (max-width: 768px) {
+/* Hardware-Accelerated Tap Feedback (Haptics Feel) */
+button, .nav-item, .room-card, .filter-pill, .property-selector, .pill-action-btn, .action-btn-primary {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.16s var(--ios-spring), opacity 0.16s ease;
+}
+
+button:active, .nav-item:active, .filter-pill:active, .pill-action-btn:active, .action-btn-primary:active {
+  transform: scale(0.95);
+  opacity: 0.85;
+}
+
+.room-card:active {
+  transform: scale(0.985);
+  transition: transform 0.16s var(--ios-spring);
+}
+
+/* ==========================================================================
+   Mobile Layout & iPhone 11 (414px x 896px) Responsive Framework
+   ========================================================================== */
+
+@media screen and (max-width: 768px) {
+  /* 1. Viewport & Shell */
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
   .app-layout {
     flex-direction: column;
     height: 100vh;
     height: 100dvh;
+    width: 100%;
+    position: relative;
     overflow: hidden;
   }
 
-  /* Compact Top Header for Mobile */
+  /* 2. Top Header Navigation (Glassmorphism with Safe Area) */
   .sidebar {
     width: 100%;
-    height: auto;
+    height: calc(52px + var(--safe-top));
+    padding: var(--safe-top) 16px 6px 16px;
     border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding: 8px 12px;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    background: var(--bg-sidebar);
-    z-index: 20;
+    background: rgba(8, 10, 15, 0.88);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
   }
 
   .sidebar .brand {
     margin-bottom: 0;
+    gap: 8px;
   }
 
-  .sidebar .brand-text {
-    display: flex;
+  .sidebar .brand-icon {
+    width: 32px;
+    height: 32px;
   }
 
+  .sidebar .brand-title {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .sidebar .brand-badge {
+    display: none;
+  }
+
+  /* Property Selector Pill on Mobile Header */
   .sidebar .property-selector-wrapper {
     margin: 0;
-    max-width: 170px;
-    flex: 1;
-    margin-left: 10px;
+    max-width: 180px;
+    flex: 0 1 auto;
   }
 
   .sidebar .property-selector {
-    padding: 6px 10px;
-    font-size: 13px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    height: 34px;
+    border-radius: 17px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+  }
+
+  .sidebar .property-dropdown-menu {
+    position: fixed;
+    top: calc(56px + var(--safe-top));
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 60vh;
+    z-index: 2000;
+    border-radius: 18px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
   }
 
   .sidebar .sidebar-footer {
     display: none;
   }
 
-  /* Bottom iOS Tab Bar */
-  .sidebar .nav-list {
+  /* 3. Native iOS Bottom Tab Bar */
+  .sidebar .nav-menu {
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    height: calc(56px + var(--safe-bottom));
-    padding: 6px 8px calc(6px + var(--safe-bottom)) 8px;
-    background: rgba(10, 13, 20, 0.94);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-top: 1px solid var(--border);
+    height: calc(54px + var(--safe-bottom));
+    padding: 6px 10px calc(4px + var(--safe-bottom)) 10px;
+    background: rgba(8, 10, 15, 0.94);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 0.5px solid rgba(255, 255, 255, 0.12);
     display: flex;
     flex-direction: row;
     justify-content: space-around;
     align-items: center;
-    z-index: 100;
+    z-index: 1000;
     margin: 0;
   }
 
+  .sidebar .nav-section-label {
+    display: none !important;
+  }
+
   .nav-item {
+    flex: 1;
+    height: 48px;
+    display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 4px 6px;
+    padding: 3px 2px;
     font-size: 10px;
     font-weight: 500;
     gap: 3px;
-    border-radius: var(--radius-sm);
-    flex: 1;
+    border-radius: 10px;
     text-align: center;
+    color: var(--text-muted);
+    position: relative;
+    background: transparent;
   }
 
   .nav-item .app-icon {
     width: 20px;
     height: 20px;
+    transition: transform 0.2s var(--ios-spring), color 0.2s ease;
   }
 
-  .nav-item .nav-badge {
-    display: none;
+  .nav-item.active {
+    color: var(--primary);
+    background: transparent;
   }
 
-  /* Main Content Area */
+  .nav-item.active .app-icon {
+    transform: scale(1.1);
+    color: var(--primary);
+  }
+
+  /* Active Tab Dot Indicator */
+  .nav-item.active::after {
+    content: '';
+    position: absolute;
+    bottom: 1px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--primary);
+    box-shadow: 0 0 6px var(--primary);
+  }
+
+  .nav-item .badge {
+    position: absolute;
+    top: 2px;
+    right: calc(50% - 16px);
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 10px;
+    background: var(--primary);
+    color: #050608;
+    font-weight: 700;
+  }
+
+  /* 4. Main Scrollable Container */
   .main-content {
-    flex: 1;
-    height: calc(100dvh - 56px - var(--safe-bottom));
-    padding-bottom: calc(64px + var(--safe-bottom));
+    margin-top: calc(52px + var(--safe-top));
+    height: calc(100dvh - 52px - var(--safe-top) - 54px - var(--safe-bottom));
+    width: 100%;
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    padding: 0;
   }
 
+  /* Views & Panels */
+  .view-panel {
+    padding: 14px 14px calc(30px + var(--safe-bottom)) 14px;
+  }
+
+  .view-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .view-header .view-actions {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .view-header .view-actions button {
+    flex: 1;
+    height: 44px;
+    justify-content: center;
+  }
+
+  /* Top Toolbar & Search */
   .top-bar {
     padding: 10px 14px;
-    gap: 8px;
-    flex-wrap: wrap;
+    gap: 10px;
+    flex-direction: column;
+    background: transparent;
+    border-bottom: none;
   }
 
   .search-wrapper {
     width: 100%;
-    order: 2;
+  }
+
+  .search-wrapper input {
+    height: 42px;
+    border-radius: 14px;
+    font-size: 16px !important;
+    padding-left: 38px;
+    background: var(--bg-card);
   }
 
   .top-bar-actions {
-    margin-left: auto;
-    order: 1;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
   .period-switcher {
+    flex: 1;
+    justify-content: space-between;
+    height: 42px;
     padding: 4px 8px;
+    border-radius: 14px;
   }
 
-  /* Cards and Grids */
-  .view-panel {
-    padding: 14px 12px 80px 12px;
+  .period-switcher .period-btn {
+    width: 38px;
+    height: 38px;
   }
 
+  /* 5. Dashboard Overview (19.5:9 Aspect Ratio Optimization) */
   .kpi-row {
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
+    margin-bottom: 14px;
   }
 
+  .kpi-card {
+    padding: 12px 14px;
+    border-radius: 16px;
+  }
+
+  .kpi-title {
+    font-size: 11px;
+    letter-spacing: 0.3px;
+  }
+
+  .kpi-value {
+    font-size: 20px;
+    margin: 4px 0 2px 0;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .dashboard-chart-card, .dashboard-occupancy-card {
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  /* 6. Rooms Section (Touch-Optimized Cards) */
   .rooms-grid {
     grid-template-columns: 1fr;
     gap: 12px;
   }
 
+  .room-card {
+    border-radius: 18px;
+    padding: 16px;
+    border: 1px solid var(--border);
+  }
+
+  .room-card-header {
+    margin-bottom: 10px;
+  }
+
+  .room-card-title {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .room-card-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+
+  .room-card-metrics strong {
+    font-size: 13px;
+  }
+
+  .room-card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .room-card-actions .pill-action-btn {
+    height: 44px;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 12px;
+  }
+
+  /* 7. Monthly Ledger Section */
+  #ledgerFilterPills, #roomFilterPills {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 8px;
+    padding: 4px 0 10px 0;
+  }
+
+  #ledgerFilterPills::-webkit-scrollbar, #roomFilterPills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filter-pill {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 36px;
+  }
+
+  .ledger-card {
+    border-radius: 18px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  /* 8. Matrix Spreadsheet Mobile Optimization (Sticky First Column) */
   .matrix-wrapper {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    max-height: calc(75dvh - 54px);
+    position: relative;
   }
 
-  /* Modals for Mobile (Bottom Sheet style) */
+  #matrixTable th, #matrixTable td {
+    padding: 10px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  /* Sticky First Column (Room) */
+  #matrixTable thead th:first-child,
+  #matrixTable tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: var(--bg-card);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.4);
+    font-weight: 700;
+  }
+
+  #matrixTable thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: var(--bg-elevated);
+  }
+
+  /* 9. Native iOS Bottom Sheet Modals */
   .modal-backdrop {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0);
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
     align-items: flex-end;
+    justify-content: center;
     padding: 0;
+    pointer-events: none;
+    transition: background 0.3s ease, backdrop-filter 0.3s ease;
+    z-index: 2000;
+  }
+
+  .modal-backdrop.open {
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    pointer-events: auto;
   }
 
   .modal-dialog {
     width: 100%;
     max-width: 100%;
-    border-radius: 20px 20px 0 0;
-    max-height: calc(90dvh - var(--safe-top));
-    margin-bottom: 0;
+    border-radius: 24px 24px 0 0;
+    max-height: calc(88dvh - var(--safe-top));
+    margin: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: none;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.8);
+    transform: translateY(100%);
+    transition: transform 0.36s var(--ios-spring);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* iOS Drag Handle Indicator */
+  .modal-dialog::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 3px;
+    margin: 10px auto 4px auto;
+    flex-shrink: 0;
+  }
+
+  .modal-backdrop.open .modal-dialog {
+    transform: translateY(0);
+  }
+
+  .modal-header {
+    padding: 10px 20px 14px 20px;
+  }
+
+  .modal-body {
+    padding: 12px 20px;
+    gap: 14px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .modal-footer {
-    padding-bottom: max(16px, var(--safe-bottom));
+    padding: 14px 20px max(20px, var(--safe-bottom)) 20px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    gap: 10px;
+  }
+
+  .modal-footer button {
+    height: 48px;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 14px;
+    flex: 1;
+  }
+
+  /* 10. iOS Safari Input Zoom Fix */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  input[type="text"],
+  input[type="number"],
+  input[type="date"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="password"],
+  input[type="search"],
+  select,
+  textarea {
+    min-height: 44px;
+    border-radius: 12px;
+  }
+
+  /* Studio & Preferences Grid on Mobile */
+  .swatches-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .color-swatch, .gradient-swatch {
+    height: 48px !important;
+    border-radius: 14px !important;
+  }
+
+  .gradient-swatches-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
   }
 }
+
