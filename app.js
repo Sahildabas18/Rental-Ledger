@@ -728,6 +728,9 @@ async function initApp() {
   await loadBuildings();
   renderBuildingSegmentedControl();
   await refreshData();
+
+  // Firebase Authentication & Native App Lock
+  await setupAuthEngine();
 }
 
 async function loadPreferences() {
@@ -4151,6 +4154,340 @@ window.addEventListener("orientationchange", () => {
     }
   }, 150);
 });
+
+// =============================================================================
+// Firebase Authentication & Native iOS App Lock Engine
+// =============================================================================
+
+async function setupAuthEngine() {
+  const lockScreen = document.getElementById("authLockScreen");
+  const appContainer = document.getElementById("app");
+  if (!lockScreen) return;
+
+  const authForm = document.getElementById("authForm");
+  const authUsername = document.getElementById("authUsername");
+  const authPassword = document.getElementById("authPassword");
+  const authTogglePwd = document.getElementById("authTogglePwd");
+  const authPwdIcon = document.getElementById("authPwdIcon");
+  const authTabLogin = document.getElementById("authTabLogin");
+  const authTabSignup = document.getElementById("authTabSignup");
+  const authSegmentThumb = document.getElementById("authSegmentThumb");
+  const authSubmitBtn = document.getElementById("authSubmitBtn");
+  const authErrorAlert = document.getElementById("authErrorAlert");
+  const authSignupWarning = document.getElementById("authSignupWarning");
+  const authSetupNotice = document.getElementById("authSetupNotice");
+  const authBypassDemoBtn = document.getElementById("authBypassDemoBtn");
+
+  const accountUsernameDisplay = document.getElementById("accountUsernameDisplay");
+  const accountUidDisplay = document.getElementById("accountUidDisplay");
+  const accountSyncStatusBadge = document.getElementById("accountSyncStatusBadge");
+  const prefLogoutBtn = document.getElementById("prefLogoutBtn");
+  const prefChangePasswordBtn = document.getElementById("prefChangePasswordBtn");
+  const prefMigrateDataBtn = document.getElementById("prefMigrateDataBtn");
+
+  let authMode = "login";
+  let activeUser = null;
+
+  function showAuthError(msg) {
+    if (!authErrorAlert) return;
+    authErrorAlert.textContent = msg;
+    authErrorAlert.style.display = "block";
+    triggerHaptic("warning");
+  }
+
+  function hideAuthError() {
+    if (authErrorAlert) authErrorAlert.style.display = "none";
+  }
+
+  function setLockState(locked) {
+    if (locked) {
+      lockScreen.style.display = "flex";
+      if (appContainer) appContainer.style.display = "none";
+      document.body.classList.add("app-locked");
+    } else {
+      lockScreen.style.display = "none";
+      if (appContainer) appContainer.style.display = "flex";
+      document.body.classList.remove("app-locked");
+    }
+  }
+
+  // 1. Toggle Login / Sign Up Tabs
+  if (authTabLogin && authTabSignup) {
+    authTabLogin.onclick = () => {
+      authMode = "login";
+      authTabLogin.classList.add("active");
+      authTabSignup.classList.remove("active");
+      if (authSegmentThumb) authSegmentThumb.style.transform = "translateX(0%)";
+      if (authSubmitBtn) authSubmitBtn.querySelector("span").textContent = "Log In";
+      if (authSignupWarning) authSignupWarning.style.display = "none";
+      hideAuthError();
+      triggerHaptic("light");
+    };
+
+    authTabSignup.onclick = () => {
+      authMode = "signup";
+      authTabSignup.classList.add("active");
+      authTabLogin.classList.remove("active");
+      if (authSegmentThumb) authSegmentThumb.style.transform = "translateX(100%)";
+      if (authSubmitBtn) authSubmitBtn.querySelector("span").textContent = "Create Account";
+      if (authSignupWarning) authSignupWarning.style.display = "flex";
+      hideAuthError();
+      triggerHaptic("light");
+    };
+  }
+
+  // 2. Show / Hide Password Toggle
+  if (authTogglePwd && authPassword) {
+    authTogglePwd.onclick = () => {
+      const isPwd = authPassword.type === "password";
+      authPassword.type = isPwd ? "text" : "password";
+      if (authPwdIcon) {
+        authPwdIcon.textContent = isPwd ? "visibility_off" : "visibility";
+      }
+      triggerHaptic("light");
+    };
+  }
+
+  // 3. Form Submission
+  if (authForm) {
+    authForm.onsubmit = async (e) => {
+      e.preventDefault();
+      hideAuthError();
+
+      const username = (authUsername.value || "").trim().toLowerCase();
+      const password = authPassword.value || "";
+
+      if (!window.rentalFirebase) {
+        showAuthError("Firebase service is initializing. Please try again in a moment.");
+        return;
+      }
+
+      if (authSubmitBtn) {
+        authSubmitBtn.disabled = true;
+        authSubmitBtn.querySelector("span").textContent = authMode === "signup" ? "Creating Account..." : "Signing In...";
+      }
+
+      try {
+        if (authMode === "signup") {
+          const res = await window.rentalFirebase.signUpWithUsername(username, password);
+          showToast(`Account created! Welcome, ${res.username}.`, "success");
+        } else {
+          const res = await window.rentalFirebase.logInWithUsername(username, password);
+          showToast(`Welcome back, ${res.username}!`, "success");
+        }
+      } catch (err) {
+        console.error("[Auth Error]", err);
+        showAuthError(err.message || "Authentication failed.");
+      } finally {
+        if (authSubmitBtn) {
+          authSubmitBtn.disabled = false;
+          authSubmitBtn.querySelector("span").textContent = authMode === "signup" ? "Create Account" : "Log In";
+        }
+      }
+    };
+  }
+
+  // 4. Local Preview Bypass (for when Firebase keys are not yet pasted)
+  if (authBypassDemoBtn) {
+    authBypassDemoBtn.onclick = () => {
+      triggerHaptic("medium");
+      setLockState(false);
+      if (accountUsernameDisplay) accountUsernameDisplay.textContent = "Local User";
+      if (accountUidDisplay) accountUidDisplay.textContent = "offline_mode";
+      if (accountSyncStatusBadge) {
+        accountSyncStatusBadge.textContent = "Local Storage";
+        accountSyncStatusBadge.className = "status-chip status-chip-warning";
+      }
+      showToast("Unlocked in Local Storage preview mode. Connect Firebase in firebase.js for cloud sync.", "info");
+    };
+  }
+
+  // 5. Change Password Modal & Handlers
+  const changePasswordModal = document.getElementById("changePasswordModal");
+  const changePasswordForm = document.getElementById("changePasswordForm");
+  const changeCurrentPassword = document.getElementById("changeCurrentPassword");
+  const changeNewPassword = document.getElementById("changeNewPassword");
+  const changeConfirmPassword = document.getElementById("changeConfirmPassword");
+  const submitChangePasswordBtn = document.getElementById("submitChangePasswordBtn");
+  const cancelChangePasswordBtn = document.getElementById("cancelChangePasswordBtn");
+  const closeChangePasswordBtn = document.getElementById("closeChangePasswordBtn");
+  const changePwdErrorAlert = document.getElementById("changePwdErrorAlert");
+
+  const closeChangePwd = () => {
+    if (changePasswordModal) changePasswordModal.classList.remove("open");
+    if (changePasswordForm) changePasswordForm.reset();
+    if (changePwdErrorAlert) changePwdErrorAlert.style.display = "none";
+  };
+
+  if (prefChangePasswordBtn) {
+    prefChangePasswordBtn.onclick = () => {
+      triggerHaptic("light");
+      if (!activeUser || !window.rentalFirebase || !window.rentalFirebase.isFirebaseConfigured || !window.rentalFirebase.isFirebaseConfigured()) {
+        showToast("Cloud account required to change password.", "warning");
+        return;
+      }
+      if (changePasswordModal) changePasswordModal.classList.add("open");
+    };
+  }
+
+  if (cancelChangePasswordBtn) cancelChangePasswordBtn.onclick = closeChangePwd;
+  if (closeChangePasswordBtn) closeChangePasswordBtn.onclick = closeChangePwd;
+
+  // Toggle helpers for change password fields
+  ["toggleChangeCurrentPwd", "toggleChangeNewPwd", "toggleChangeConfirmPwd"].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.onclick = () => {
+      const inp = btn.previousElementSibling;
+      if (inp) {
+        const isPwd = inp.type === "password";
+        inp.type = isPwd ? "text" : "password";
+        const ic = btn.querySelector(".material-symbols-outlined");
+        if (ic) ic.textContent = isPwd ? "visibility_off" : "visibility";
+      }
+    };
+  });
+
+  if (submitChangePasswordBtn) {
+    submitChangePasswordBtn.onclick = async () => {
+      if (changePwdErrorAlert) changePwdErrorAlert.style.display = "none";
+      const currentPwd = changeCurrentPassword.value || "";
+      const newPwd = changeNewPassword.value || "";
+      const confirmPwd = changeConfirmPassword.value || "";
+
+      if (!currentPwd) {
+        changePwdErrorAlert.textContent = "Please enter your current password.";
+        changePwdErrorAlert.style.display = "block";
+        return;
+      }
+      if (newPwd.length < 8) {
+        changePwdErrorAlert.textContent = "New password must be at least 8 characters.";
+        changePwdErrorAlert.style.display = "block";
+        return;
+      }
+      if (newPwd !== confirmPwd) {
+        changePwdErrorAlert.textContent = "New passwords do not match.";
+        changePwdErrorAlert.style.display = "block";
+        return;
+      }
+
+      submitChangePasswordBtn.disabled = true;
+      submitChangePasswordBtn.textContent = "Updating...";
+
+      try {
+        await window.rentalFirebase.changeUserPassword(currentPwd, newPwd);
+        showToast("Password changed successfully!", "success");
+        closeChangePwd();
+      } catch (err) {
+        changePwdErrorAlert.textContent = err.message || "Could not change password.";
+        changePwdErrorAlert.style.display = "block";
+      } finally {
+        submitChangePasswordBtn.disabled = false;
+        submitChangePasswordBtn.textContent = "Update Password";
+      }
+    };
+  }
+
+  // 6. Log Out Action
+  if (prefLogoutBtn) {
+    prefLogoutBtn.onclick = async () => {
+      triggerHaptic("warning");
+      const confirmed = await (window.showIosConfirm ? window.showIosConfirm("Are you sure you want to log out?", "Log Out", "Cancel") : confirm("Are you sure you want to log out?"));
+      if (!confirmed) return;
+
+      if (window.rentalFirebase && window.rentalFirebase.logOutUser) {
+        await window.rentalFirebase.logOutUser();
+      }
+      activeUser = null;
+      if (authForm) authForm.reset();
+      setLockState(true);
+      showToast("Logged out safely.", "info");
+    };
+  }
+
+  // 7. Migration Modal & Handlers
+  const migrationModal = document.getElementById("migrationModal");
+  const confirmMigrationBtn = document.getElementById("confirmMigrationBtn");
+  const skipMigrationBtn = document.getElementById("skipMigrationBtn");
+
+  if (confirmMigrationBtn) {
+    confirmMigrationBtn.onclick = async () => {
+      if (!activeUser || !window.pwaStorage) return;
+      confirmMigrationBtn.disabled = true;
+      confirmMigrationBtn.querySelector("span").textContent = "Importing...";
+      try {
+        await window.pwaStorage.migrateLocalDataToCloud(activeUser.uid);
+        showToast("Local portfolio successfully imported to your account!", "success");
+        if (migrationModal) migrationModal.classList.remove("open");
+        if (prefMigrateDataBtn) prefMigrateDataBtn.style.display = "none";
+        await refreshData();
+      } catch (err) {
+        console.error("[Migration Error]", err);
+        showToast("Could not import data: " + err.message, "error");
+      } finally {
+        confirmMigrationBtn.disabled = false;
+        confirmMigrationBtn.querySelector("span").textContent = "Import My Existing Local Data";
+      }
+    };
+  }
+
+  if (skipMigrationBtn) {
+    skipMigrationBtn.onclick = () => {
+      if (migrationModal) migrationModal.classList.remove("open");
+      showToast("Started fresh portfolio.", "info");
+    };
+  }
+
+  if (prefMigrateDataBtn) {
+    prefMigrateDataBtn.onclick = () => {
+      if (migrationModal) migrationModal.classList.add("open");
+    };
+  }
+
+  // 8. Firebase Auth State Observer
+  function checkFirebaseConfigStatus() {
+    const isConfigured = window.rentalFirebase && window.rentalFirebase.isFirebaseConfigured && window.rentalFirebase.isFirebaseConfigured();
+    if (!isConfigured) {
+      if (authSetupNotice) authSetupNotice.style.display = "block";
+      setLockState(true);
+    }
+    return isConfigured;
+  }
+
+  if (window.rentalFirebase && window.rentalFirebase.onAuthChange) {
+    window.rentalFirebase.onAuthChange(async (user) => {
+      activeUser = user;
+      if (user) {
+        console.log("[Auth Engine] User signed in:", user.username, user.uid);
+        setLockState(false);
+        if (accountUsernameDisplay) accountUsernameDisplay.textContent = user.username;
+        if (accountUidDisplay) accountUidDisplay.textContent = user.uid.substring(0, 8) + '...';
+        if (accountSyncStatusBadge) {
+          accountSyncStatusBadge.textContent = "Cloud Synced";
+          accountSyncStatusBadge.className = "status-chip status-chip-success";
+        }
+
+        // Connect pwaStorage to current user
+        if (window.pwaStorage) {
+          const syncResult = await window.pwaStorage.setCurrentUser(user.uid);
+          if (syncResult && !syncResult.hasCloudData && syncResult.localRoomsCount > 0) {
+            // Unmigrated local data detected! Prompt user
+            if (migrationModal) migrationModal.classList.add("open");
+            if (prefMigrateDataBtn) prefMigrateDataBtn.style.display = "flex";
+          }
+        }
+        await refreshData();
+      } else {
+        console.log("[Auth Engine] No user signed in (App Locked).");
+        setLockState(true);
+        checkFirebaseConfigStatus();
+      }
+    });
+  } else {
+    // If Firebase module is loading asynchronously, wait a tick
+    setTimeout(checkFirebaseConfigStatus, 800);
+  }
+}
 
 // Boot the application
 onReady(initApp);

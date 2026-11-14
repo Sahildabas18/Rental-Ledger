@@ -12,6 +12,8 @@
     constructor() {
       this.data = null;
       this.prefs = null;
+      this.currentUid = null;
+      this._syncTimeout = null;
       this.initPromise = this._initialize();
     }
 
@@ -82,6 +84,69 @@
       } catch (e) {
         console.error("[PWA Storage] LocalStorage write error:", e);
       }
+
+      // Seamless Firestore 2-Way Synchronization when authenticated
+      if (this.currentUid && window.rentalFirebase && window.rentalFirebase.isFirebaseConfigured && window.rentalFirebase.isFirebaseConfigured()) {
+        this._debouncedCloudSync();
+      }
+    }
+
+    _debouncedCloudSync() {
+      if (this._syncTimeout) clearTimeout(this._syncTimeout);
+      this._syncTimeout = setTimeout(async () => {
+        try {
+          if (!this.currentUid || !window.rentalFirebase) return;
+          await Promise.all([
+            window.rentalFirebase.savePortfolioToFirestore(this.currentUid, this.data.buildings, this.data.rooms),
+            window.rentalFirebase.saveStatementsToFirestore(this.currentUid, this.data.monthly_records, this.data.payments, this.data.utility_bills)
+          ]);
+          console.log("[PWA Storage] Cloud sync completed successfully.");
+        } catch (err) {
+          console.warn("[PWA Storage] Cloud sync notice (queued to offline cache):", err);
+        }
+      }, 500);
+    }
+
+    async setCurrentUser(uid) {
+      this.currentUid = uid;
+      if (!uid) return { hasCloudData: false };
+
+      if (window.rentalFirebase && window.rentalFirebase.isFirebaseConfigured && window.rentalFirebase.isFirebaseConfigured()) {
+        try {
+          const cloudData = await window.rentalFirebase.loadUserDataFromFirestore(uid);
+          if (cloudData && cloudData.hasData) {
+            console.log("[PWA Storage] Loaded remote Firestore portfolio for user:", uid);
+            if (cloudData.portfolio) {
+              this.data.buildings = cloudData.portfolio.buildings || [];
+              this.data.rooms = cloudData.portfolio.rooms || [];
+            }
+            if (cloudData.statements) {
+              this.data.monthly_records = cloudData.statements.statements || [];
+              this.data.payments = cloudData.statements.payments || [];
+              this.data.utility_bills = cloudData.statements.utilityBills || [];
+            }
+            this._saveData();
+            return { hasCloudData: true };
+          } else {
+            console.log("[PWA Storage] No existing cloud portfolio found for user:", uid);
+            const localRoomsCount = (this.data && this.data.rooms) ? this.data.rooms.length : 0;
+            return { hasCloudData: false, localRoomsCount };
+          }
+        } catch (err) {
+          console.warn("[PWA Storage] Could not fetch remote user data (using local offline cache):", err);
+          return { hasCloudData: false, error: err.message };
+        }
+      }
+      return { hasCloudData: false };
+    }
+
+    async migrateLocalDataToCloud(uid) {
+      if (!uid || !window.rentalFirebase) throw new Error("Firebase not initialized");
+      await Promise.all([
+        window.rentalFirebase.savePortfolioToFirestore(uid, this.data.buildings, this.data.rooms),
+        window.rentalFirebase.saveStatementsToFirestore(uid, this.data.monthly_records, this.data.payments, this.data.utility_bills)
+      ]);
+      return { success: true };
     }
 
     _savePrefs() {

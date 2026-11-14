@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Application: Rental Ledger & Sub-Meter OS (Universal PWA)
+//
+// Security Architecture:
+// Strict Per-User Isolation. All application documents, user settings,
+// properties, rooms, monthly records, payments, and utility bills
+// reside exclusively under each user's authenticated path tree:
+//
+// /users/{uid}
+// /users/{uid}/{document=**}
+//
+// Root and Subcollections:
+// - /users/{uid}: User profile and application preferences
+// - /users/{uid}/preferences/{prefId}: Theme and UI settings
+// - /users/{uid}/buildings/{buildingId}: Property metadata (name, address, colorHex)
+// - /users/{uid}/rooms/{roomId}: Room configurations, rents, tenants, meter rates
+// - /users/{uid}/monthly_records/{recordId}: Billing cycles, meter readings, calculations
+// - /users/{uid}/payments/{paymentId}: Tenant payment receipts and ledger entries
+// - /users/{uid}/utility_bills/{billId}: Utility electricity bills and rates
+//
+// Default Policy: Deny all reads and writes by default at the root level.
+// Access Policy: Signed-in users can only read and write their own documents.
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Deny all reads and writes by default across the database
+    match /{document=**} {
+      allow read, write: false;
+    }
+
+    // Restrict access: Signed-in users can read and write only their own documents
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

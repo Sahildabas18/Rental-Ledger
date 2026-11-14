@@ -1,11 +1,12 @@
-// Rental Ledger PWA - Offline Service Worker (Cache-First Strategy)
-const CACHE_NAME = "rental-ledger-v1.0.0";
+// Rental Ledger PWA - Offline Service Worker (Cache-First Strategy with Firebase Bypass)
+const CACHE_NAME = "rental-ledger-v3.0.0-firebase";
 const ASSETS_TO_CACHE = [
   "./",
   "./index.html",
   "./app.css",
   "./app.js",
   "./pwa-storage.js",
+  "./firebase.js",
   "./seed_data.json",
   "./manifest.webmanifest",
   "./icons/apple-touch-icon.png",
@@ -19,7 +20,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log("[Service Worker] Caching app shell assets...");
+      console.log("[Service Worker] Caching app shell assets (v3)...");
       return cache.addAll(ASSETS_TO_CACHE);
     }).then(() => self.skipWaiting())
   );
@@ -41,9 +42,23 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// 3. Fetch Event: Cache First, Network Fallback
+// 3. Fetch Event: Cache First for local assets, strict network bypass for Firebase/Auth
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  const url = new URL(event.request.url);
+
+  // CRITICAL PWA SAFEGUARD: Never cache or intercept Firebase Auth, Google APIs, or Firestore traffic
+  if (
+    url.hostname.includes("googleapis.com") ||
+    url.hostname.includes("firebaseio.com") ||
+    url.hostname.includes("identitytoolkit") ||
+    url.hostname.includes("securetoken") ||
+    url.hostname.includes("firestore") ||
+    url.pathname.includes("google.firestore")
+  ) {
+    return; // Pass directly to native network
+  }
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {

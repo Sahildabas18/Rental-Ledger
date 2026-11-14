@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: https://*.gstatic.com https://*.googleapis.com; connect-src 'self' data: blob: https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline';">
   <title>Rental Ledger & Sub-Meter OS</title>
 
   <!-- PWA & iOS Safari Standalone Headers -->
@@ -149,6 +149,91 @@
 
   <!-- TOAST NOTIFICATIONS CONTAINER -->
   <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- APP LOCK & AUTHENTICATION SCREEN (NATIVE iOS AESTHETIC) -->
+  <div id="authLockScreen" class="auth-lock-screen">
+    <div class="auth-card ios-inset-group">
+      <div class="auth-header">
+        <div class="auth-app-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="7" fill="var(--primary)" fill-opacity="0.2"/>
+            <path d="M12 4L4 10V20H9V14H15V20H20V10L12 4Z" fill="var(--primary)"/>
+            <circle cx="12" cy="10" r="2.5" fill="#0B0D13"/>
+          </svg>
+        </div>
+        <h2 class="auth-title">Rental Ledger</h2>
+        <p class="auth-subtitle">Secure Property & Tenant OS</p>
+      </div>
+
+      <!-- Segmented Control for Login / Sign Up -->
+      <div class="ios-segmented-control auth-segmented-control" id="authSegmented">
+        <div class="ios-segment-thumb" id="authSegmentThumb"></div>
+        <button type="button" class="ios-segment-btn active" id="authTabLogin">Log In</button>
+        <button type="button" class="ios-segment-btn" id="authTabSignup">Sign Up</button>
+      </div>
+
+      <!-- Error / Status Alert Box -->
+      <div id="authErrorAlert" class="auth-alert-box" style="display: none;"></div>
+
+      <form id="authForm" autocomplete="on">
+        <div class="form-group">
+          <label for="authUsername" class="auth-input-label">Username</label>
+          <div class="auth-input-wrapper">
+            <input 
+              type="text" 
+              id="authUsername" 
+              class="auth-input" 
+              placeholder="e.g. sahil_ledger" 
+              autocomplete="username" 
+              autocapitalize="none" 
+              spellcheck="false" 
+              required
+            >
+          </div>
+          <small class="auth-field-hint">3 to 20 characters: letters, numbers, and underscores.</small>
+        </div>
+
+        <div class="form-group" style="margin-top: 14px;">
+          <label for="authPassword" class="auth-input-label">Password</label>
+          <div class="auth-input-wrapper">
+            <input 
+              type="password" 
+              id="authPassword" 
+              class="auth-input" 
+              placeholder="Minimum 8 characters" 
+              autocomplete="current-password" 
+              required
+            >
+            <button type="button" class="auth-toggle-pwd" id="authTogglePwd" aria-label="Toggle password visibility">
+              <span class="material-symbols-outlined" id="authPwdIcon">visibility</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Warning on Sign Up Screen -->
+        <div id="authSignupWarning" class="auth-warning-banner" style="display: none;">
+          <svg class="app-icon warning-icon"><use href="#icon-security"></use></svg>
+          <div class="warning-text">
+            <strong>Important Security Notice:</strong><br>
+            There is no password recovery. Keep your password safe and export regular backups from Settings.
+          </div>
+        </div>
+
+        <button type="submit" id="authSubmitBtn" class="action-btn-primary auth-submit-btn">
+          <span>Log In</span>
+        </button>
+      </form>
+
+      <!-- Firebase Setup Notice (Visible if apiKey is placeholder) -->
+      <div id="authSetupNotice" class="auth-setup-banner" style="display: none;">
+        <span class="status-chip status-chip-warning" style="font-size: 11px;">Setup Note</span>
+        <p style="font-size: 12.5px; margin-top: 6px; color: var(--text-secondary); line-height: 1.4;">Firebase credentials not yet pasted into <code>firebase.js</code>.</p>
+        <button type="button" id="authBypassDemoBtn" class="pill-action-btn" style="margin-top: 8px; width: 100%;">
+          <span>Preview with Local Offline Storage</span>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <div id="app" class="app-layout">
     
@@ -744,6 +829,43 @@
           </div>
 
           <div class="settings-grid" style="margin-top: 18px;">
+            <!-- Card 0: Cloud Account & Security -->
+            <div class="card ios-inset-group" id="accountManagementCard">
+              <div class="card-header">
+                <h3 class="card-title">Cloud Account & Sync</h3>
+                <span class="status-chip" id="accountSyncStatusBadge">Active</span>
+              </div>
+              <p class="card-subtitle" style="margin-bottom: 16px;">
+                User Account: <strong id="accountUsernameDisplay">--</strong> &bull; <span id="accountUidDisplay" style="font-family: var(--font-mono); font-size: 11px;">local</span>
+              </p>
+
+              <div class="ios-inset-group" style="margin: 0; padding: 0;">
+                <div class="ios-inset-row has-icon" id="prefChangePasswordBtn" style="cursor: pointer;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span class="material-symbols-outlined" style="color: var(--primary);">key</span>
+                    <span class="ios-inset-label">Change Password</span>
+                  </div>
+                  <span class="ios-chevron material-symbols-outlined">chevron_right</span>
+                </div>
+
+                <div class="ios-inset-row has-icon" id="prefMigrateDataBtn" style="cursor: pointer; display: none;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span class="material-symbols-outlined" style="color: #34C759;">cloud_upload</span>
+                    <span class="ios-inset-label">Import Local Data to Cloud Account</span>
+                  </div>
+                  <span class="status-chip" style="font-size: 11px;">1-Click</span>
+                </div>
+
+                <div class="ios-inset-row has-icon" id="prefLogoutBtn" style="cursor: pointer; border-bottom: none;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span class="material-symbols-outlined" style="color: #FF3B30;">logout</span>
+                    <span class="ios-inset-label" style="color: #FF3B30; font-weight: 600;">Log Out</span>
+                  </div>
+                  <span class="ios-chevron material-symbols-outlined" style="color: #FF3B30;">chevron_right</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Card 1: Universal Export -->
             <div class="card ios-inset-group">
               <div class="card-header">
@@ -1265,6 +1387,87 @@
       </div>
     </div>
   </div>
+
+  <!-- CHANGE PASSWORD MODAL (NATIVE iOS BOTTOM SHEET) -->
+  <div class="modal" id="changePasswordModal" aria-hidden="true">
+    <div class="modal-dialog ios-bottom-sheet">
+      <div class="ios-drag-handle" aria-hidden="true"></div>
+      <div class="modal-header">
+        <h3 class="modal-title">Change Password</h3>
+        <button class="modal-close-btn" id="closeChangePasswordBtn" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="changePwdErrorAlert" class="auth-alert-box" style="display: none; margin-bottom: 12px;"></div>
+        <form id="changePasswordForm">
+          <div class="form-group">
+            <label for="changeCurrentPassword">Current Password</label>
+            <div class="auth-input-wrapper">
+              <input type="password" id="changeCurrentPassword" class="auth-input" required autocomplete="current-password" placeholder="Enter current password">
+              <button type="button" class="auth-toggle-pwd" id="toggleChangeCurrentPwd">
+                <span class="material-symbols-outlined">visibility</span>
+              </button>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 14px;">
+            <label for="changeNewPassword">New Password</label>
+            <div class="auth-input-wrapper">
+              <input type="password" id="changeNewPassword" class="auth-input" required autocomplete="new-password" placeholder="Minimum 8 characters">
+              <button type="button" class="auth-toggle-pwd" id="toggleChangeNewPwd">
+                <span class="material-symbols-outlined">visibility</span>
+              </button>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 14px;">
+            <label for="changeConfirmPassword">Confirm New Password</label>
+            <div class="auth-input-wrapper">
+              <input type="password" id="changeConfirmPassword" class="auth-input" required autocomplete="new-password" placeholder="Re-enter new password">
+              <button type="button" class="auth-toggle-pwd" id="toggleChangeConfirmPwd">
+                <span class="material-symbols-outlined">visibility</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="pill-action-btn" id="cancelChangePasswordBtn">Cancel</button>
+        <button type="button" class="action-btn-primary" id="submitChangePasswordBtn">Update Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ONE-TIME DATA MIGRATION MODAL (NATIVE iOS BOTTOM SHEET) -->
+  <div class="modal" id="migrationModal" aria-hidden="true">
+    <div class="modal-dialog ios-bottom-sheet">
+      <div class="ios-drag-handle" aria-hidden="true"></div>
+      <div class="modal-header">
+        <h3 class="modal-title">Sync Local Data to Account</h3>
+      </div>
+      <div class="modal-body">
+        <div style="text-align: center; margin-bottom: 16px;">
+          <div style="width: 56px; height: 56px; border-radius: 28px; background: rgba(52, 199, 89, 0.15); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+            <span class="material-symbols-outlined" style="font-size: 32px; color: #34C759;">cloud_upload</span>
+          </div>
+          <p style="font-size: 15px; color: var(--text-primary); line-height: 1.4;">
+            We found existing property and room records stored locally on this device. Would you like to import them to your new cloud account?
+          </p>
+        </div>
+        <div class="ios-inset-group" style="margin: 0; padding: 12px 16px; font-size: 13px; color: var(--text-secondary); line-height: 1.4;">
+          Your local data will be securely backed up to your personal Firestore collection (<code>users/{uid}/...</code>). Your local copy remains intact as a safety backup.
+        </div>
+      </div>
+      <div class="modal-footer" style="flex-direction: column; gap: 8px;">
+        <button type="button" class="action-btn-primary btn-full-width" id="confirmMigrationBtn">
+          <span>Import My Existing Local Data</span>
+        </button>
+        <button type="button" class="pill-action-btn btn-full-width" id="skipMigrationBtn">
+          <span>Start with Empty Portfolio</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase Modular ES Module Integration -->
+  <script type="module" src="firebase.js"></script>
 
   <!-- Client-Side Offline Database Engine (Parity with SQLite Backend) -->
   <script src="pwa-storage.js"></script>
