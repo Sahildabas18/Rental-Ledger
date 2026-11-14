@@ -622,10 +622,106 @@
     }
 
     // -------------------------------------------------------------------------
-    // Export Data (CSV & PDF)
+    // Export Data (CSV & PDF) & Annual Ledger Matrix
     // -------------------------------------------------------------------------
 
-    async export_csv_data(month, year, building_id) {
+    async get_annual_matrix(building_id, year) {
+      await this.initPromise;
+      const y = Number(year) || new Date().getFullYear();
+      const bId = (building_id !== null && building_id !== undefined && building_id !== "all") ? Number(building_id) : null;
+
+      let rooms = this.data.rooms || [];
+      if (bId) {
+        rooms = rooms.filter(r => r.buildingId === bId);
+      }
+
+      // Pre-fetch/generate records for all 12 months of this year
+      const monthlyData = {};
+      for (let m = 1; m <= 12; m++) {
+        monthlyData[m] = await this.get_records(bId, m, y);
+      }
+
+      const rows = rooms.map(room => {
+        const bldg = (this.data.buildings || []).find(b => b.id === room.buildingId);
+        const months = {};
+        let annualDue = 0;
+        let annualPaid = 0;
+        let annualBalance = 0;
+
+        for (let m = 1; m <= 12; m++) {
+          const item = (monthlyData[m] || []).find(it => it.room.id === room.id);
+          if (item) {
+            months[m] = item;
+            annualDue += (item.record.totalDue || 0);
+            annualPaid += (item.record.totalPaid || 0);
+            annualBalance += (item.record.balance || 0);
+          } else {
+            months[m] = null;
+          }
+        }
+
+        return {
+          room: {
+            id: room.id,
+            buildingId: room.buildingId,
+            buildingName: bldg ? bldg.name : "Main Property",
+            roomNumber: room.roomNumber,
+            status: room.status,
+            agreedRent: Number(room.agreedRent || 0),
+            defaultMeterRate: Number(room.defaultMeterRate || 10),
+            tenantName: room.tenantName || ""
+          },
+          months,
+          annualDue,
+          annualPaid,
+          annualBalance,
+          isAnnualCleared: annualDue > 0 && annualPaid >= annualDue
+        };
+      });
+
+      const columnTotals = {};
+      let grandTotalDue = 0;
+      let grandTotalPaid = 0;
+      let grandTotalBalance = 0;
+
+      for (let m = 1; m <= 12; m++) {
+        const list = monthlyData[m] || [];
+        const mDue = list.reduce((sum, item) => sum + (item.record.totalDue || 0), 0);
+        const mPaid = list.reduce((sum, item) => sum + (item.record.totalPaid || 0), 0);
+        const mBal = list.reduce((sum, item) => sum + (item.record.balance || 0), 0);
+        columnTotals[m] = { due: mDue, paid: mPaid, balance: mBal };
+        grandTotalDue += mDue;
+        grandTotalPaid += mPaid;
+        grandTotalBalance += mBal;
+      }
+
+      return {
+        year: y,
+        buildingId: bId,
+        rows,
+        columnTotals,
+        grandTotalDue,
+        grandTotalPaid,
+        grandTotalBalance
+      };
+    }
+
+    async export_csv_data(arg1, arg2, arg3) {
+      // Handle both (building_id, month, year) and (month, year, building_id)
+      let building_id, month, year;
+      if (Number(arg2) > 12 && Number(arg1) <= 12) {
+        month = Number(arg1);
+        year = Number(arg2);
+        building_id = arg3;
+      } else {
+        building_id = arg1;
+        month = Number(arg2);
+        year = Number(arg3);
+      }
+      month = month || (new Date().getMonth() + 1);
+      year = year || new Date().getFullYear();
+      building_id = (building_id !== null && building_id !== undefined && building_id !== "all") ? Number(building_id) : null;
+
       const records = await this.get_records(building_id, month, year);
       const headers = ["Room", "Property", "Tenant", "Rent", "Prev Units", "Curr Units", "Consumed Units", "Rate/Unit", "Electric Bill", "Other Charges", "Total Due", "Paid", "Balance", "Status"];
       const rows = records.map(r => [
@@ -646,6 +742,37 @@
       ]);
       const csvStr = [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
       return { success: true, csv: csvStr, fileName: `Rental_Ledger_${year}_${month}.csv` };
+    }
+
+    async export_annual_csv_data(building_id, year) {
+      const matrix = await this.get_annual_matrix(building_id, year);
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const headers = ["Room", "Property", "Tenant"];
+      months.forEach(m => {
+        headers.push(`${m} Due`, `${m} Paid`, `${m} Bal`);
+      });
+      headers.push("Annual Due", "Annual Paid", "Annual Balance", "Status");
+
+      const rows = matrix.rows.map(r => {
+        const row = [
+          `"${r.room.roomNumber}"`,
+          `"${r.room.buildingName}"`,
+          `"${r.room.tenantName}"`
+        ];
+        for (let m = 1; m <= 12; m++) {
+          const item = r.months[m];
+          if (item) {
+            row.push(item.record.totalDue, item.record.totalPaid, item.record.balance);
+          } else {
+            row.push(0, 0, 0);
+          }
+        }
+        row.push(r.annualDue, r.annualPaid, r.annualBalance, r.isAnnualCleared ? '"Cleared"' : (r.annualPaid > 0 ? '"Partial"' : '"Unpaid"'));
+        return row;
+      });
+
+      const csvStr = [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
+      return { success: true, csv: csvStr, fileName: `Rental_Ledger_Annual_${matrix.year}.csv` };
     }
 
     async export_pdf_data(month, year, building_id) {

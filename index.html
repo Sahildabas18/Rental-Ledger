@@ -141,6 +141,9 @@
       <symbol id="icon-laptop" viewBox="0 0 24 24">
         <path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
       </symbol>
+      <symbol id="icon-calendar_month" viewBox="0 0 24 24">
+        <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zm-7 5h5v5h-5z"/>
+      </symbol>
     </defs>
   </svg>
 
@@ -164,6 +167,9 @@
           <span class="brand-badge">Sub-Meter OS</span>
         </div>
       </div>
+
+      <!-- Compact iOS Navigation Bar Title (Centered on iPhone 11 Mobile) -->
+      <div class="ios-nav-compact-title" id="iosNavCompactTitle">Overview</div>
 
       <!-- Property Switcher Wrapper with Dropdown -->
       <div class="property-selector-wrapper">
@@ -275,8 +281,42 @@
       <!-- VIEW CONTAINER -->
       <div class="content-scrollable" id="viewContainer">
         
+        <!-- Native iOS Pull-to-Refresh Indicator -->
+        <div id="iosPullToRefresh" class="ios-ptr-container" aria-hidden="true">
+          <div class="ios-ptr-spinner-box">
+            <div class="ios-ptr-spinner" id="iosPtrSpinner">
+              <div class="ios-ptr-blade b1"></div>
+              <div class="ios-ptr-blade b2"></div>
+              <div class="ios-ptr-blade b3"></div>
+              <div class="ios-ptr-blade b4"></div>
+              <div class="ios-ptr-blade b5"></div>
+              <div class="ios-ptr-blade b6"></div>
+              <div class="ios-ptr-blade b7"></div>
+              <div class="ios-ptr-blade b8"></div>
+              <div class="ios-ptr-blade b9"></div>
+              <div class="ios-ptr-blade b10"></div>
+              <div class="ios-ptr-blade b11"></div>
+              <div class="ios-ptr-blade b12"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Apple iOS Segmented Control for Property / Building Switching -->
+        <div class="ios-building-bar" id="iosBuildingBar">
+          <div class="ios-segmented-control" id="buildingSegmentedControl" role="tablist" aria-label="Filter Properties">
+            <div class="ios-segment-thumb" id="buildingSegmentThumb"></div>
+            <!-- Injected via renderBuildingSegmentedControl() in app.js -->
+          </div>
+        </div>
+
         <!-- 1. DASHBOARD / OVERVIEW VIEW -->
         <section id="view-dashboard" class="view-panel active">
+          
+          <div class="ios-large-title-container" data-view-title="Overview">
+            <div class="ios-large-title-eyebrow">PORTFOLIO OVERVIEW</div>
+            <h1 class="ios-large-title">Overview</h1>
+            <p class="ios-large-title-subtitle">Contracted revenue, occupancy gauge, and power board reconciliation</p>
+          </div>
           
           <!-- Hero Revenue Banner -->
           <div class="hero-card">
@@ -411,25 +451,30 @@
 
         <!-- 2. ROOMS VIEW -->
         <section id="view-rooms" class="view-panel">
+          <div class="ios-large-title-container" data-view-title="Rooms">
+            <div class="ios-large-title-eyebrow">PORTFOLIO UNITS</div>
+            <h1 class="ios-large-title">Rooms</h1>
+            <p class="ios-large-title-subtitle">Manage tenant leases, base rates, and sub-meter calibrations</p>
+          </div>
+
           <div class="view-header">
-            <div>
-              <h2 class="view-title">Rooms</h2>
-              <p class="view-subtitle">Manage tenant leases, base rates, and sub-meter calibrations</p>
-            </div>
-            <div class="view-actions">
-              <div class="filter-pills" id="roomFilterPills">
-                <button class="filter-pill active" data-filter="all">All</button>
-                <button class="filter-pill" data-filter="Lended">Occupied</button>
-                <button class="filter-pill" data-filter="Empty">Vacant</button>
+            <div class="view-actions" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+              <div class="ios-segmented-control filter-pills" id="roomFilterPills" role="tablist">
+                <div class="ios-segment-thumb"></div>
+                <button class="ios-segment-btn filter-pill active" data-filter="all">All</button>
+                <button class="ios-segment-btn filter-pill" data-filter="Lended">Occupied</button>
+                <button class="ios-segment-btn filter-pill" data-filter="Empty">Vacant</button>
               </div>
-              <button class="pill-action-btn" id="openAddBuildingFromRoomsBtn">
-                <svg class="app-icon"><use href="#icon-domain"></use></svg>
-                <span>Add Building</span>
-              </button>
-              <button class="action-btn-primary" id="addRoomBtn">
-                <svg class="app-icon"><use href="#icon-add"></use></svg>
-                <span>Add Room</span>
-              </button>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="pill-action-btn" id="openAddBuildingFromRoomsBtn">
+                  <svg class="app-icon"><use href="#icon-domain"></use></svg>
+                  <span>Add Building</span>
+                </button>
+                <button class="action-btn-primary" id="addRoomBtn">
+                  <svg class="app-icon"><use href="#icon-add"></use></svg>
+                  <span>Add Room</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -440,16 +485,19 @@
 
         <!-- 3. MONTHLY LEDGER VIEW -->
         <section id="view-ledger" class="view-panel">
+          <div class="ios-large-title-container" data-view-title="Monthly Ledger">
+            <div class="ios-large-title-eyebrow">BILLING STATEMENTS</div>
+            <h1 class="ios-large-title">Monthly Ledger</h1>
+            <p class="ios-large-title-subtitle">Sub-meter calculation, additional charges, and payment tracking</p>
+          </div>
+
           <div class="view-header">
-            <div>
-              <h2 class="view-title">Monthly Statement Ledger</h2>
-              <p class="view-subtitle">Sub-meter calculation, additional charges, and payment tracking</p>
-            </div>
-            <div class="view-actions">
-              <div class="filter-pills" id="ledgerFilterPills">
-                <button class="filter-pill active" data-filter="all">All</button>
-                <button class="filter-pill" data-filter="unpaid">Unpaid</button>
-                <button class="filter-pill" data-filter="paid">Paid</button>
+            <div class="view-actions" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+              <div class="ios-segmented-control filter-pills" id="ledgerFilterPills" role="tablist">
+                <div class="ios-segment-thumb"></div>
+                <button class="ios-segment-btn filter-pill active" data-filter="all">All</button>
+                <button class="ios-segment-btn filter-pill" data-filter="unpaid">Unpaid</button>
+                <button class="ios-segment-btn filter-pill" data-filter="paid">Paid</button>
               </div>
               <button class="action-btn-primary" id="addLedgerEntryBtn">
                 <svg class="app-icon"><use href="#icon-add"></use></svg>
@@ -465,10 +513,14 @@
 
         <!-- 4. SPREADSHEET MATRIX VIEW -->
         <section id="view-spreadsheet" class="view-panel">
+          <div class="ios-large-title-container" data-view-title="Spreadsheet Matrix">
+            <div class="ios-large-title-eyebrow">TENANT ACCOUNTING</div>
+            <h1 class="ios-large-title">Spreadsheet Matrix</h1>
+            <p class="ios-large-title-subtitle">Comprehensive tenant balance ledger, sub-meter billing, and inline editable matrix</p>
+          </div>
           <div class="view-header">
             <div>
-              <h2 class="view-title">Full Matrix Spreadsheet</h2>
-              <p class="view-subtitle">Comprehensive tenant balance ledger, sub-meter billing, and inline editable matrix</p>
+              <h2 class="view-title" style="display:none;">Full Matrix Spreadsheet</h2>
             </div>
             <div class="view-actions">
               <div class="sort-select-wrapper">
@@ -499,12 +551,38 @@
             </div>
           </div>
 
+          <!-- Segmented Controls & Quick Jump Bar -->
+          <div class="matrix-toolbar-container">
+            <div class="ios-segmented-control matrix-mode-switch" id="matrixModeSwitch">
+              <button type="button" class="ios-seg-btn active" data-mode="annual" id="matrixModeAnnualBtn">
+                <svg class="app-icon"><use href="#icon-calendar_month"></use></svg>
+                <span>Annual Matrix</span>
+              </button>
+              <button type="button" class="ios-seg-btn" data-mode="monthly" id="matrixModeMonthlyBtn">
+                <svg class="app-icon"><use href="#icon-receipt_long"></use></svg>
+                <span>Monthly Detail</span>
+              </button>
+            </div>
+
+            <div class="matrix-quick-pills-wrapper">
+              <span class="matrix-pills-label">Quick Jump:</span>
+              <div class="ios-segmented-control matrix-jump-pills" id="matrixJumpPills">
+                <button type="button" class="ios-pill active" data-jump="all">All Year</button>
+                <button type="button" class="ios-pill" data-jump="current" id="matrixJumpCurrentBtn">This Month</button>
+                <button type="button" class="ios-pill" data-jump="q1">Q1</button>
+                <button type="button" class="ios-pill" data-jump="q2">Q2</button>
+                <button type="button" class="ios-pill" data-jump="q3">Q3</button>
+                <button type="button" class="ios-pill" data-jump="q4">Q4</button>
+              </div>
+            </div>
+          </div>
+
           <div class="card table-card">
-            <div class="table-responsive">
+            <div class="table-responsive matrix-wrapper" id="matrixScrollWrapper">
               <table class="data-table matrix-table" id="matrixTable">
-                <thead>
+                <thead id="matrixTableHead">
                   <tr>
-                    <th class="sortable-th" data-col="room" title="Click to sort by Room">Room <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th sticky-first-col" data-col="room" title="Click to sort by Room">Room & Tenant <span class="th-sort-arrow"></span></th>
                     <th class="sortable-th" data-col="building" title="Click to sort by Building">Building <span class="th-sort-arrow"></span></th>
                     <th class="sortable-th" data-col="tenant" title="Click to sort by Tenant">Tenant <span class="th-sort-arrow"></span></th>
                     <th class="sortable-th" data-col="status" title="Click to sort by Status">Status <span class="th-sort-arrow"></span></th>
@@ -533,17 +611,16 @@
 
         <!-- 5. STUDIO & SETTINGS VIEW -->
         <section id="view-settings" class="view-panel">
-          <div class="view-header">
-            <div>
-              <h2 class="view-title">Customisation Studio</h2>
-              <p class="view-subtitle">Hardware-accelerated visual theme tokens and database maintenance</p>
-            </div>
+          <div class="ios-large-title-container" data-view-title="Studio & Theme">
+            <div class="ios-large-title-eyebrow">CUSTOMISATION STUDIO</div>
+            <h1 class="ios-large-title">Studio & Theme</h1>
+            <p class="ios-large-title-subtitle">Hardware-accelerated visual theme tokens and database maintenance</p>
           </div>
 
           <div class="settings-grid">
             
             <!-- Color Swatches Card -->
-            <div class="card">
+            <div class="card ios-inset-group">
               <div class="card-header">
                 <h3 class="card-title">Color Presets</h3>
               </div>
@@ -567,7 +644,7 @@
             </div>
 
             <!-- Live Preview Card -->
-            <div class="card">
+            <div class="card ios-inset-group">
               <div class="card-header">
                 <h3 class="card-title">Live Preview Card</h3>
               </div>
@@ -585,22 +662,22 @@
             </div>
 
             <!-- Accessibility & Gradients -->
-            <div class="card">
+            <div class="card ios-inset-group">
               <div class="card-header">
                 <h3 class="card-title">Display & Motion Settings</h3>
               </div>
-              <div class="setting-toggle-row">
+              <div class="setting-toggle-row ios-cell">
                 <div>
                   <div class="setting-name">Reduced Motion Mode</div>
                   <div class="setting-desc">Disable spring transitions for motion sensitivity</div>
                 </div>
-                <label class="switch">
+                <label class="switch ios-switch">
                   <input type="checkbox" id="reducedMotionToggle">
                   <span class="slider"></span>
                 </label>
               </div>
 
-              <div class="setting-toggle-row" style="margin-top: 14px;">
+              <div class="setting-toggle-row ios-cell" style="margin-top: 14px;">
                 <div>
                   <div class="setting-name">Theme Palette</div>
                   <div class="setting-desc">Choose between Obsidian Dark and High-Contrast Light</div>
@@ -610,10 +687,18 @@
                   <button class="theme-btn" id="lightThemeBtn">Light</button>
                 </div>
               </div>
+
+              <div class="ios-list-row ios-cell" id="openExportSheetBtn" style="cursor: pointer; margin-top: 14px; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <div class="setting-name">Quick Export Actions</div>
+                  <div class="setting-desc">Open native iOS Action Sheet for export options</div>
+                </div>
+                <span class="ios-chevron material-symbols-outlined">chevron_right</span>
+              </div>
             </div>
 
             <!-- Database Backup & Restore -->
-            <div class="card">
+            <div class="card ios-inset-group">
               <div class="card-header">
                 <h3 class="card-title">Database Portability</h3>
               </div>
@@ -638,11 +723,10 @@
 
         <!-- 6. UNIVERSAL IMPORT / EXPORT VIEW -->
         <section id="view-import-export" class="view-panel">
-          <div class="view-header">
-            <div>
-              <h2 class="view-title">Universal Import & Export Hub</h2>
-              <p class="view-subtitle">Seamless cross-platform data exchange compatible with Android phones, iPhones (iOS), Windows, and macOS</p>
-            </div>
+          <div class="ios-large-title-container" data-view-title="Import & Export">
+            <div class="ios-large-title-eyebrow">DATA PORTABILITY</div>
+            <h1 class="ios-large-title">Import & Export</h1>
+            <p class="ios-large-title-subtitle">Universal cross-platform data exchange compatible with iOS, Android, macOS, and Windows</p>
           </div>
 
           <!-- Cross-Platform Compatibility Badge Bar -->
@@ -661,7 +745,7 @@
 
           <div class="settings-grid" style="margin-top: 18px;">
             <!-- Card 1: Universal Export -->
-            <div class="card">
+            <div class="card ios-inset-group">
               <div class="card-header">
                 <h3 class="card-title">Universal Export</h3>
               </div>
@@ -702,7 +786,7 @@
             </div>
 
             <!-- Card 2: Universal Import & Merge -->
-            <div class="card">
+            <div class="card ios-inset-group">
               <div class="card-header">
                 <h3 class="card-title">Universal Import & Merge</h3>
               </div>
@@ -756,6 +840,7 @@
   <!-- Modal 1: Add/Edit Room -->
   <div class="modal-backdrop" id="roomModal">
     <div class="modal-dialog">
+      <div class="ios-drag-handle" aria-hidden="true"></div>
       <div class="modal-header">
         <h3 class="modal-title" id="roomModalTitle">Add New Room</h3>
         <button class="modal-close-btn" id="closeRoomModalBtn">
@@ -829,7 +914,7 @@
                   <div style="font-size: 11px; color: var(--text-muted);">Has tenant paid 1 month refundable security deposit?</div>
                 </div>
               </div>
-              <label class="switch">
+              <label class="switch ios-switch">
                 <input type="checkbox" id="modalRoomDepositCheckbox">
                 <span class="slider"></span>
               </label>
@@ -857,6 +942,7 @@
   <!-- Modal 2: Record Payment -->
   <div class="modal-backdrop" id="paymentModal">
     <div class="modal-dialog">
+      <div class="ios-drag-handle" aria-hidden="true"></div>
       <div class="modal-header">
         <h3 class="modal-title">Record Rent Payment</h3>
         <button class="modal-close-btn" id="closePaymentModalBtn">
@@ -918,6 +1004,7 @@
   <!-- Modal 3: Update Sub-Meter Reading & Monthly Statement -->
   <div class="modal-backdrop" id="meterModal">
     <div class="modal-dialog">
+      <div class="ios-drag-handle" aria-hidden="true"></div>
       <div class="modal-header">
         <h3 class="modal-title" id="meterModalTitle">Edit Monthly Statement</h3>
         <button class="modal-close-btn" id="closeMeterModalBtn">
@@ -1012,6 +1099,7 @@
   <!-- Modal 4: Power Board Invoice -->
   <div class="modal-backdrop" id="utilityModal">
     <div class="modal-dialog">
+      <div class="ios-drag-handle" aria-hidden="true"></div>
       <div class="modal-header">
         <h3 class="modal-title">Electricity Board Utility Bill</h3>
         <button class="modal-close-btn" id="closeUtilityModalBtn">
@@ -1052,6 +1140,7 @@
   <!-- Modal 5: Add New Building -->
   <div class="modal-backdrop" id="buildingModal">
     <div class="modal-dialog">
+      <div class="ios-drag-handle" aria-hidden="true"></div>
       <div class="modal-header">
         <h3 class="modal-title" id="buildingModalTitle">Add New Property / Building</h3>
         <button class="modal-close-btn" id="closeBuildingModalBtn">
@@ -1080,6 +1169,99 @@
         <button class="pill-action-btn btn-danger" id="deleteBuildingBtn" style="display: none; margin-right: auto;">Delete Property</button>
         <button class="pill-action-btn" id="cancelBuildingModalBtn">Cancel</button>
         <button class="action-btn-primary" id="saveBuildingBtn">Save Property</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 6: Native iOS Cell Tap Inspection Bottom Card -->
+  <div class="modal-backdrop ios-sheet-backdrop" id="cellInspectionBackdrop">
+    <div class="modal-dialog ios-bottom-sheet" id="cellInspectionSheet">
+      <div class="ios-sheet-handle-bar">
+        <div class="ios-sheet-handle"></div>
+      </div>
+      <div class="modal-header ios-sheet-header">
+        <div class="ios-sheet-title-group">
+          <div class="ios-sheet-room-badge" id="sheetRoomBadge">Room 101</div>
+          <div class="ios-sheet-subinfo">
+            <span id="sheetBuildingName">Main Property</span>
+            <span class="ios-dot-sep">·</span>
+            <span id="sheetTenantName">Tenant Name</span>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="closeInspectionSheetBtn" aria-label="Close">
+          <svg class="app-icon"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body ios-sheet-body">
+        <!-- Month Period and Status Badge -->
+        <div class="ios-sheet-period-row">
+          <div class="ios-sheet-month-label" id="sheetMonthPeriod">November 2026</div>
+          <div id="sheetStatusBadge" class="ios-badge paid">Paid</div>
+        </div>
+
+        <!-- Financial KPI Metric Grid -->
+        <div class="ios-sheet-kpi-grid">
+          <div class="ios-sheet-kpi-card">
+            <span class="ios-kpi-lbl">Total Due</span>
+            <span class="ios-kpi-val" id="sheetTotalDue">₹0.00</span>
+            <span class="ios-kpi-sub" id="sheetDueBreakdown">Rent + Power</span>
+          </div>
+          <div class="ios-sheet-kpi-card">
+            <span class="ios-kpi-lbl">Paid Amount</span>
+            <span class="ios-kpi-val color-green" id="sheetPaidAmount">₹0.00</span>
+            <span class="ios-kpi-sub" id="sheetPaidSub">Cleared</span>
+          </div>
+          <div class="ios-sheet-kpi-card">
+            <span class="ios-kpi-lbl">Remaining Balance</span>
+            <span class="ios-kpi-val" id="sheetBalance">₹0.00</span>
+            <span class="ios-kpi-sub" id="sheetBalanceSub">Outstanding</span>
+          </div>
+        </div>
+
+        <!-- Sub-Meter & Financial Breakdown Inset Group -->
+        <div class="ios-inset-group">
+          <div class="ios-inset-row">
+            <span class="ios-inset-label">Base Monthly Rent</span>
+            <span class="ios-inset-val" id="sheetRentVal">₹0.00</span>
+          </div>
+          <div class="ios-inset-row">
+            <span class="ios-inset-label">Sub-Meter Units Consumed</span>
+            <span class="ios-inset-val" id="sheetUnitsVal">0.0 Units</span>
+          </div>
+          <div class="ios-inset-row">
+            <span class="ios-inset-label">Electricity Charges</span>
+            <span class="ios-inset-val" id="sheetPowerVal">₹0.00</span>
+          </div>
+          <div class="ios-inset-row">
+            <span class="ios-inset-label">Other Charges / Surcharges</span>
+            <span class="ios-inset-val" id="sheetOtherVal">₹0.00</span>
+          </div>
+          <div class="ios-inset-row">
+            <span class="ios-inset-label">Previous Arrears / Carryover</span>
+            <span class="ios-inset-val" id="sheetPrevBalVal">₹0.00</span>
+          </div>
+        </div>
+
+        <!-- Payments Mini List / History Preview -->
+        <div class="ios-sheet-payments-section">
+          <div class="ios-section-header">
+            <span>Payment Transactions</span>
+            <span id="sheetPaymentsCount" class="badge">0</span>
+          </div>
+          <div class="ios-sheet-payments-list" id="sheetPaymentsList">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer ios-sheet-footer">
+        <button type="button" class="pill-action-btn" id="sheetViewHistoryBtn">
+          <svg class="app-icon"><use href="#icon-receipt_long"></use></svg>
+          <span>View History</span>
+        </button>
+        <button type="button" class="action-btn-primary" id="sheetAddPaymentBtn">
+          <svg class="app-icon"><use href="#icon-add"></use></svg>
+          <span>Add Payment</span>
+        </button>
       </div>
     </div>
   </div>

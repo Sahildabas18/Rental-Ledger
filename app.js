@@ -61,6 +61,10 @@ const state = {
   spreadsheetSortCol: "room",
   spreadsheetSortDir: "asc",
   spreadsheetEditMode: false,
+  spreadsheetMode: "annual",
+  spreadsheetJump: "all",
+  annualMatrixData: null,
+  activeInspectionData: null,
   stagedUnivJsonData: null
 };
 
@@ -153,6 +157,488 @@ function showToast(message, type = "info", duration = 4000) {
   timeoutId = setTimeout(removeToast, duration);
 }
 
+
+// -----------------------------------------------------------------------------
+// iOS Native Navigation, Gestures & Haptic Feedback System
+// Tailored for iPhone 11 (414x896), iOS 17/18 HIG, Spring Physics & Share Sheet
+// -----------------------------------------------------------------------------
+
+function triggerHaptic(type = "light") {
+  if (!navigator.vibrate) return;
+  try {
+    if (type === "light") {
+      navigator.vibrate(12);
+    } else if (type === "medium") {
+      navigator.vibrate(22);
+    } else if (type === "success" || type === "heavy") {
+      navigator.vibrate([15, 35, 15]);
+    } else if (type === "warning" || type === "delete") {
+      navigator.vibrate([25, 50, 25]);
+    }
+  } catch (_) {}
+}
+
+function playIosHapticClick() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!window._iosAudioCtx) window._iosAudioCtx = new AudioCtx();
+    const ctx = window._iosAudioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.03);
+    gain.gain.setValueAtTime(0.04, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.03);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.035);
+  } catch (_) {}
+}
+
+// Native iOS Share Sheet Integration with graceful fallback to blob download
+async function shareOrDownloadFile(fileOrBlob, filename, mimeType, title = "Rental Ledger") {
+  triggerHaptic("light");
+  playIosHapticClick();
+  try {
+    let fileObj;
+    if (fileOrBlob instanceof File) {
+      fileObj = fileOrBlob;
+    } else {
+      fileObj = new File([fileOrBlob], filename, { type: mimeType });
+    }
+
+    if (navigator.canShare && navigator.canShare({ files: [fileObj] })) {
+      await navigator.share({
+        title: title,
+        text: `${title} - ${filename}`,
+        files: [fileObj]
+      });
+      showToast(`${title} shared successfully via iOS Share Sheet!`, "success");
+      triggerHaptic("success");
+      return true;
+    }
+  } catch (err) {
+    if (err.name === "AbortError") {
+      return true; // User cancelled share sheet
+    }
+    console.warn("[iOS Share] Fallback to download:", err);
+  }
+
+  // Fallback: direct browser file download
+  const blob = (fileOrBlob instanceof Blob) ? fileOrBlob : new Blob([fileOrBlob], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return false;
+}
+
+// Apple-style Segmented Control Handler with sliding thumb and spring physics
+function updateSegmentThumb(container, activeBtn, animate = true) {
+  if (!container || !activeBtn) return;
+  const thumb = container.querySelector(".ios-segment-thumb");
+  if (!thumb) return;
+  
+  if (!animate) {
+    thumb.style.transition = "none";
+  } else {
+    thumb.style.transition = "transform 0.32s cubic-bezier(0.32, 0.72, 0, 1), width 0.32s cubic-bezier(0.32, 0.72, 0, 1)";
+  }
+  
+  const leftOffset = activeBtn.offsetLeft;
+  const width = activeBtn.offsetWidth;
+  thumb.style.width = `${width}px`;
+  thumb.style.transform = `translateX(${leftOffset}px)`;
+}
+
+function setupSegmentedControl(containerId, onChange) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  container.querySelectorAll(".ios-segment-btn").forEach(btn => {
+    btn.onclick = () => {
+      container.querySelectorAll(".ios-segment-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      updateSegmentThumb(container, btn, true);
+      btn.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      triggerHaptic("light");
+      playIosHapticClick();
+      if (onChange) onChange(btn);
+    };
+  });
+
+  const activeBtn = container.querySelector(".ios-segment-btn.active") || container.querySelector(".ios-segment-btn");
+  if (activeBtn) {
+    activeBtn.classList.add("active");
+    requestAnimationFrame(() => updateSegmentThumb(container, activeBtn, false));
+  }
+}
+
+// Render dynamic Building Segmented Control
+function renderBuildingSegmentedControl() {
+  const container = document.getElementById("buildingSegmentedControl");
+  if (!container) return;
+
+  container.innerHTML = '<div class="ios-segment-thumb" id="buildingSegmentThumb"></div>';
+
+  // 1. All Properties
+  const allBtn = document.createElement("button");
+  allBtn.className = `ios-segment-btn ${state.selectedBuildingId === null ? "active" : ""}`;
+  allBtn.dataset.buildingId = "all";
+  allBtn.innerHTML = `
+    <svg class="app-icon" style="width: 14px; height: 14px;"><use href="#icon-domain"></use></svg>
+    <span>All Properties</span>
+  `;
+  container.appendChild(allBtn);
+
+  // 2. Individual Buildings
+  state.buildings.forEach(b => {
+    const btn = document.createElement("button");
+    btn.className = `ios-segment-btn ${state.selectedBuildingId === b.id ? "active" : ""}`;
+    btn.dataset.buildingId = String(b.id);
+    btn.innerHTML = `
+      <span class="ios-segment-dot" style="background: ${b.colorHex || 'var(--primary)'};"></span>
+      <span>${escapeHtml(b.name)}</span>
+    `;
+    container.appendChild(btn);
+  });
+
+  setupSegmentedControl("buildingSegmentedControl", async (btn) => {
+    const bId = btn.dataset.buildingId;
+    if (bId === "all") {
+      state.selectedBuildingId = null;
+      document.getElementById("currentBuildingName").textContent = "All Properties";
+    } else {
+      state.selectedBuildingId = Number(bId);
+      const bObj = state.buildings.find(b => b.id === state.selectedBuildingId);
+      if (bObj) document.getElementById("currentBuildingName").textContent = bObj.name;
+    }
+    await refreshData();
+  });
+}
+
+// iOS Swipe-to-Action gesture engine
+let activeOpenSwipeCell = null;
+
+function makeSwipeable(cell, actionsConfig) {
+  const content = cell.querySelector(".ios-swipe-content");
+  const actions = cell.querySelector(".ios-swipe-actions");
+  if (!content || !actions) return;
+
+  let startX = 0;
+  let startY = 0;
+  let currentOffset = 0;
+  let isSwiping = false;
+  let isHorizontal = null;
+  const maxActionsWidth = 192; // 3 buttons * 64px
+
+  const payBtn = actions.querySelector(".action-pay");
+  const editBtn = actions.querySelector(".action-edit");
+  const deleteBtn = actions.querySelector(".action-delete");
+
+  if (payBtn && actionsConfig.onPay) {
+    payBtn.onclick = (e) => {
+      e.stopPropagation();
+      closeSwipeCell(cell);
+      triggerHaptic("light");
+      playIosHapticClick();
+      actionsConfig.onPay();
+    };
+  }
+  if (editBtn && actionsConfig.onEdit) {
+    editBtn.onclick = (e) => {
+      e.stopPropagation();
+      closeSwipeCell(cell);
+      triggerHaptic("light");
+      playIosHapticClick();
+      actionsConfig.onEdit();
+    };
+  }
+  if (deleteBtn && actionsConfig.onDelete) {
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      closeSwipeCell(cell);
+      triggerHaptic("warning");
+      actionsConfig.onDelete();
+    };
+  }
+
+  cell.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    if (activeOpenSwipeCell && activeOpenSwipeCell !== cell) {
+      closeSwipeCell(activeOpenSwipeCell);
+    }
+
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    currentOffset = cell.dataset.isOpen === "true" ? -maxActionsWidth : 0;
+    isHorizontal = null;
+    isSwiping = true;
+    content.style.transition = "none";
+  }, { passive: true });
+
+  cell.addEventListener("touchmove", (e) => {
+    if (!isSwiping || e.touches.length !== 1) return;
+    const clientX = e.touches[0].clientX;
+    const clientY = e.touches[0].clientY;
+    const deltaX = clientX - startX;
+    const deltaY = clientY - startY;
+
+    if (isHorizontal === null) {
+      if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 7) {
+        isHorizontal = false;
+        isSwiping = false;
+        return;
+      }
+      if (Math.abs(deltaX) > 7) {
+        isHorizontal = true;
+      }
+    }
+
+    if (isHorizontal) {
+      let targetX = currentOffset + deltaX;
+      if (targetX > 0) {
+        targetX = targetX * 0.15; // Damped right drag resistance
+      } else if (targetX < -maxActionsWidth) {
+        targetX = -maxActionsWidth + (targetX + maxActionsWidth) * 0.22; // Damped left overswipe
+      }
+      content.style.transform = `translateX(${targetX}px)`;
+    }
+  }, { passive: false });
+
+  cell.addEventListener("touchend", (e) => {
+    if (!isSwiping) return;
+    isSwiping = false;
+
+    if (isHorizontal) {
+      const deltaX = e.changedTouches[0].clientX - startX;
+      content.style.transition = "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)";
+      
+      if (cell.dataset.isOpen === "true") {
+        if (deltaX > 40) {
+          closeSwipeCell(cell);
+        } else {
+          openSwipeCell(cell, maxActionsWidth);
+        }
+      } else {
+        if (deltaX < -55) {
+          openSwipeCell(cell, maxActionsWidth);
+        } else {
+          closeSwipeCell(cell);
+        }
+      }
+    }
+  });
+
+  content.addEventListener("click", (e) => {
+    if (cell.dataset.isOpen === "true") {
+      e.stopPropagation();
+      e.preventDefault();
+      closeSwipeCell(cell);
+    }
+  });
+}
+
+function openSwipeCell(cell, maxActionsWidth = 192) {
+  const content = cell.querySelector(".ios-swipe-content");
+  if (!content) return;
+  content.style.transition = "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)";
+  content.style.transform = `translateX(-${maxActionsWidth}px)`;
+  cell.dataset.isOpen = "true";
+  cell.classList.add("swipe-open");
+  activeOpenSwipeCell = cell;
+  triggerHaptic("light");
+}
+
+function closeSwipeCell(cell) {
+  const content = cell.querySelector(".ios-swipe-content");
+  if (!content) return;
+  content.style.transition = "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)";
+  content.style.transform = "translateX(0)";
+  cell.dataset.isOpen = "false";
+  cell.classList.remove("swipe-open");
+  if (activeOpenSwipeCell === cell) {
+    activeOpenSwipeCell = null;
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (activeOpenSwipeCell && !activeOpenSwipeCell.contains(e.target)) {
+    closeSwipeCell(activeOpenSwipeCell);
+  }
+});
+
+// Native iOS Pull-to-Refresh interaction
+function setupPullToRefresh() {
+  const scrollContainer = document.getElementById("viewContainer");
+  const ptrContainer = document.getElementById("iosPullToRefresh");
+  const spinner = document.getElementById("iosPtrSpinner");
+  if (!scrollContainer || !ptrContainer || !spinner) return;
+
+  let startY = 0;
+  let isPulling = false;
+  let isRefreshing = false;
+  let hasTriggeredThresholdHaptic = false;
+  const PULL_THRESHOLD = 62;
+
+  scrollContainer.addEventListener("touchstart", (e) => {
+    if (isRefreshing) return;
+    if (scrollContainer.scrollTop <= 0) {
+      startY = e.touches[0].clientY;
+      isPulling = true;
+      hasTriggeredThresholdHaptic = false;
+      ptrContainer.style.transition = "none";
+    }
+  }, { passive: true });
+
+  scrollContainer.addEventListener("touchmove", (e) => {
+    if (!isPulling || isRefreshing) return;
+    if (scrollContainer.scrollTop > 0) {
+      isPulling = false;
+      ptrContainer.style.height = "0px";
+      return;
+    }
+
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - startY;
+
+    if (deltaY > 0) {
+      const pullDist = Math.min(84, Math.pow(deltaY, 0.82) * 1.6);
+      ptrContainer.style.height = `${pullDist}px`;
+      
+      const progress = Math.min(1, pullDist / PULL_THRESHOLD);
+      spinner.style.opacity = Math.max(0.2, progress);
+      spinner.style.transform = `scale(${0.6 + progress * 0.4}) rotate(${progress * 280}deg)`;
+
+      const blades = spinner.querySelectorAll(".ios-ptr-blade");
+      const activeBlades = Math.floor(progress * blades.length);
+      blades.forEach((blade, idx) => {
+        blade.style.opacity = idx < activeBlades ? "1" : "0.2";
+      });
+
+      if (pullDist >= PULL_THRESHOLD && !hasTriggeredThresholdHaptic) {
+        hasTriggeredThresholdHaptic = true;
+        triggerHaptic("medium");
+        playIosHapticClick();
+      } else if (pullDist < PULL_THRESHOLD) {
+        hasTriggeredThresholdHaptic = false;
+      }
+    }
+  }, { passive: true });
+
+  scrollContainer.addEventListener("touchend", async (e) => {
+    if (!isPulling || isRefreshing) return;
+    isPulling = false;
+
+    const currentHeight = parseFloat(ptrContainer.style.height || "0");
+    if (currentHeight >= PULL_THRESHOLD) {
+      isRefreshing = true;
+      ptrContainer.style.transition = "height 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
+      ptrContainer.style.height = "52px";
+      spinner.classList.add("refreshing");
+      triggerHaptic("success");
+      playIosHapticClick();
+
+      try {
+        await refreshData();
+        showToast("Updated just now", "info", 2000);
+      } catch (err) {
+        console.error("[Pull-to-refresh error]", err);
+      } finally {
+        setTimeout(() => {
+          ptrContainer.style.transition = "height 0.38s cubic-bezier(0.32, 0.72, 0, 1)";
+          ptrContainer.style.height = "0px";
+          setTimeout(() => {
+            spinner.classList.remove("refreshing");
+            spinner.style.opacity = "0";
+            spinner.style.transform = "scale(0.6) rotate(0deg)";
+            isRefreshing = false;
+          }, 400);
+        }, 500);
+      }
+    } else {
+      ptrContainer.style.transition = "height 0.3s cubic-bezier(0.32, 0.72, 0, 1)";
+      ptrContainer.style.height = "0px";
+      setTimeout(() => {
+        spinner.style.opacity = "0";
+        spinner.style.transform = "scale(0.6) rotate(0deg)";
+      }, 300);
+    }
+  });
+}
+
+// iOS Large Navigation Title System with smooth scroll-driven collapse
+function setupIosLargeTitleCollapse() {
+  const scrollContainer = document.getElementById("viewContainer");
+  const compactTitle = document.getElementById("iosNavCompactTitle");
+  const sidebar = document.querySelector(".sidebar");
+  if (!scrollContainer || !compactTitle) return;
+
+  const viewTitles = {
+    "dashboard": "Overview",
+    "rooms": "Rooms",
+    "ledger": "Monthly Ledger",
+    "spreadsheet": "Spreadsheet Matrix",
+    "settings": "Studio & Theme",
+    "import-export": "Import & Export"
+  };
+
+  function updateCompactTitleText() {
+    const curTitle = viewTitles[state.currentView] || "Rental Ledger";
+    compactTitle.textContent = curTitle;
+  }
+
+  scrollContainer.addEventListener("scroll", () => {
+    const scrollTop = scrollContainer.scrollTop;
+    const activePanel = document.querySelector(".view-panel.active");
+    if (!activePanel) return;
+
+    const largeTitle = activePanel.querySelector(".ios-large-title");
+
+    const collapseThreshold = 46;
+    const progress = Math.min(1, Math.max(0, scrollTop / collapseThreshold));
+
+    if (largeTitle) {
+      largeTitle.style.opacity = (1 - progress * 1.15).toFixed(3);
+      largeTitle.style.transform = `translateY(${-progress * 14}px) scale(${1 - progress * 0.05})`;
+    }
+
+    compactTitle.style.opacity = progress.toFixed(3);
+    compactTitle.style.transform = `translateX(-50%) translateY(${(1 - progress) * 8}px)`;
+
+    if (sidebar) {
+      if (progress > 0.15) {
+        sidebar.classList.add("ios-nav-scrolled");
+      } else {
+        sidebar.classList.remove("ios-nav-scrolled");
+      }
+    }
+  }, { passive: true });
+
+  window.updateIosTitleState = () => {
+    updateCompactTitleText();
+    const activePanel = document.querySelector(".view-panel.active");
+    if (!activePanel) return;
+    const largeTitle = activePanel.querySelector(".ios-large-title");
+    if (largeTitle) {
+      largeTitle.style.opacity = "1";
+      largeTitle.style.transform = "translateY(0) scale(1)";
+    }
+    compactTitle.style.opacity = "0";
+    compactTitle.style.transform = "translateX(-50%) translateY(8px)";
+    if (sidebar) sidebar.classList.remove("ios-nav-scrolled");
+  };
+}
+
+
 // -----------------------------------------------------------------------------
 // Async Loading Indicator Management
 // -----------------------------------------------------------------------------
@@ -228,13 +714,19 @@ async function initApp() {
   setupSearch();
   setupPeriodSwitcher();
   setupSpreadsheetControls();
+  setupCellInspectionGestures();
   setupUniversalImportExport();
   setupStudioSettings();
   setupModals();
   setupInputGuards();
 
+  // iOS Navigation & Gestures Framework
+  setupIosLargeTitleCollapse();
+  setupPullToRefresh();
+
   await loadPreferences();
   await loadBuildings();
+  renderBuildingSegmentedControl();
   await refreshData();
 }
 
@@ -526,9 +1018,13 @@ async function handleSaveBuilding() {
 }
 
 async function handleDeleteBuilding(buildingId, buildingName) {
-  const confirmed = confirm(
-    `Are you sure you want to permanently delete property '${buildingName}'?\n\nWarning: This will delete this property along with all its associated rooms, meter readings, and ledger statements.`
-  );
+  const confirmed = await showIosConfirm({
+    title: `Delete Property '${buildingName}'`,
+    message: `Are you sure you want to permanently delete property '${buildingName}'?\n\nWarning: This will delete this property along with all its associated rooms, meter readings, and ledger statements.`,
+    confirmText: "Delete Property",
+    isDestructive: true,
+    cancelText: "Cancel"
+  });
   if (!confirmed) return;
 
   const res = await callAPI("delete_building", buildingId);
@@ -564,6 +1060,7 @@ async function loadBuildings() {
     document.getElementById("currentBuildingName").textContent = "All Properties";
   }
   renderPropertyDropdown();
+  renderBuildingSegmentedControl();
 }
 
 async function refreshData() {
@@ -583,6 +1080,7 @@ async function refreshData() {
   renderRooms();
   renderLedger();
   renderSpreadsheet();
+  renderBuildingSegmentedControl();
 
   document.getElementById("navRoomsCount").textContent = state.rooms.length;
   document.getElementById("telemetryRooms").textContent = `${state.rooms.length} Rooms Tracked`;
@@ -774,70 +1272,134 @@ function renderRooms() {
   }
 
   filtered.forEach(r => {
-    const card = document.createElement("div");
-    card.className = "room-card";
+    const cell = document.createElement("div");
+    cell.className = "ios-swipe-cell";
+    cell.dataset.roomId = r.id;
     const isOccupied = r.status === "Lended";
 
     const depositAmount = r.securityDepositAmount > 0 ? r.securityDepositAmount : (r.securityDepositReceived ? r.agreedRent : 0);
     const hasDeposit = Boolean(r.securityDepositReceived || r.advanceReceived);
 
-    card.innerHTML = `
-      <div class="room-card-header">
-        <span class="room-card-title">Room ${escapeHtml(r.roomNumber)}</span>
-        <span class="status-chip ${isOccupied ? 'occupied' : 'vacant'}">${isOccupied ? 'Occupied' : 'Vacant'}</span>
-      </div>
-
-      <div class="room-card-tenant">
-        ${getIconSvg("person", "", "width: 16px; height: 16px;")}
-        <span>${escapeHtml(r.tenant ? r.tenant.name : 'No active tenant')}</span>
-      </div>
-
-      <div class="room-card-metrics">
-        <div>
-          <span style="color: var(--text-muted); display: block;">Agreed Rent</span>
-          <strong>${fmtCurrency(r.agreedRent)}</strong>
-        </div>
-        <div>
-          <span style="color: var(--text-muted); display: block;">Meter Rate</span>
-          <strong>${fmtCurrency(r.defaultMeterRate)}/Unit</strong>
-        </div>
-        <div>
-          <span style="color: var(--text-muted); display: block;">1 Mo. Deposit</span>
-          <strong style="color: ${hasDeposit ? 'var(--success)' : 'var(--text-muted)'};">${hasDeposit ? fmtCurrency(depositAmount) : 'None'}</strong>
-        </div>
-      </div>
-
-      <div class="room-card-sub-info">
-        <span class="room-lended-badge">
-          ${r.lendedDate ? 'Lended: ' + escapeHtml(r.lendedDate) : 'Due day: ' + (r.moveInDay || 1)}
-        </span>
-        <span class="deposit-pill ${hasDeposit ? 'received' : 'not-given'}">
-          ${getIconSvg("shield", "", "width: 11px; height: 11px;")}
-          <span>${hasDeposit ? 'Deposit Received' : 'No Deposit'}</span>
-        </span>
-      </div>
-
-      <div class="room-card-actions">
-        <button class="pill-action-btn edit-room-btn" data-id="${r.id}">
+    cell.innerHTML = `
+      <div class="ios-swipe-actions">
+        <button class="ios-swipe-action action-pay" title="Record Rent Payment">
+          ${getIconSvg("payments")}
+          <span>Payment</span>
+        </button>
+        <button class="ios-swipe-action action-edit" title="Edit Room Details">
           ${getIconSvg("edit")}
           <span>Edit</span>
         </button>
-        <button class="pill-action-btn btn-danger delete-room-btn" data-id="${r.id}" data-num="${escapeHtml(r.roomNumber)}">
+        <button class="ios-swipe-action action-delete" title="Delete Room">
           ${getIconSvg("delete")}
           <span>Delete</span>
         </button>
       </div>
+
+      <div class="ios-swipe-content room-card">
+        <div class="room-card-header" style="cursor: pointer;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="room-card-title">Room ${escapeHtml(r.roomNumber)}</span>
+            <span class="status-chip ${isOccupied ? 'occupied' : 'vacant'}">${isOccupied ? 'Occupied' : 'Vacant'}</span>
+          </div>
+          <svg class="app-icon" style="color: var(--text-muted); width: 18px; height: 18px;"><use href="#icon-chevron_right"></use></svg>
+        </div>
+
+        <div class="room-card-tenant" style="padding-top: 6px; padding-bottom: 6px; display: flex; align-items: center; gap: 8px;">
+          ${getIconSvg("person", "", "width: 16px; height: 16px; flex-shrink: 0;")}
+          <span style="font-size: 13px; font-weight: 500;">${escapeHtml(r.tenant ? r.tenant.name : 'No active tenant')}</span>
+        </div>
+
+        <div class="room-card-metrics">
+          <div>
+            <span style="color: var(--text-muted); display: block;">Agreed Rent</span>
+            <strong>${fmtCurrency(r.agreedRent)}</strong>
+          </div>
+          <div>
+            <span style="color: var(--text-muted); display: block;">Meter Rate</span>
+            <strong>${fmtCurrency(r.defaultMeterRate)}/Unit</strong>
+          </div>
+          <div>
+            <span style="color: var(--text-muted); display: block;">1 Mo. Deposit</span>
+            <strong style="color: ${hasDeposit ? 'var(--success)' : 'var(--text-muted)'};">${hasDeposit ? fmtCurrency(depositAmount) : 'None'}</strong>
+          </div>
+        </div>
+
+        <div class="room-card-sub-info">
+          <span class="room-lended-badge">
+            ${r.lendedDate ? 'Lended: ' + escapeHtml(r.lendedDate) : 'Due day: ' + (r.moveInDay || 1)}
+          </span>
+          <span class="deposit-pill ${hasDeposit ? 'received' : 'not-given'}">
+            ${getIconSvg("shield", "", "width: 11px; height: 11px;")}
+            <span>${hasDeposit ? 'Deposit Received' : 'No Deposit'}</span>
+          </span>
+        </div>
+
+        <div class="room-card-actions">
+          <button class="pill-action-btn edit-room-btn" data-id="${r.id}">
+            ${getIconSvg("edit")}
+            <span>Edit</span>
+          </button>
+          <button class="pill-action-btn btn-danger delete-room-btn" data-id="${r.id}" data-num="${escapeHtml(r.roomNumber)}">
+            ${getIconSvg("delete")}
+            <span>Delete</span>
+          </button>
+        </div>
+      </div>
     `;
-    container.appendChild(card);
+
+    container.appendChild(cell);
+
+    // Attach iOS Touch-Drag Swipe Actions
+    makeSwipeable(cell, {
+      onPay: () => {
+        if (isOccupied) {
+          const rd = state.records.find(item => item.room.id === r.id);
+          if (rd) {
+            openPaymentModal(
+              rd.record.id,
+              r.roomNumber,
+              r.tenant ? r.tenant.name : (r.tenantName || ""),
+              rd.record.balance,
+              rd.record.rent
+            );
+          } else {
+            openPaymentModal(
+              0,
+              r.roomNumber,
+              r.tenant ? r.tenant.name : (r.tenantName || ""),
+              r.agreedRent,
+              r.agreedRent
+            );
+          }
+        } else {
+          showToast(`Room ${r.roomNumber} is currently vacant. Assign a tenant to record rent payment.`, "info");
+        }
+      },
+      onEdit: () => openEditRoomModal(r.id),
+      onDelete: () => handleDeleteRoom(r.id, r.roomNumber)
+    });
   });
 
-  // Bind edit & delete buttons
+  // Tapping the card header also opens the room details / edit modal
+  container.querySelectorAll(".room-card-header").forEach(hdr => {
+    hdr.onclick = () => {
+      const editBtn = hdr.closest(".room-card").querySelector(".edit-room-btn");
+      if (editBtn) editBtn.click();
+    };
+  });
+
+  // Bind desktop inside buttons
   container.querySelectorAll(".edit-room-btn").forEach(btn => {
-    btn.onclick = () => openEditRoomModal(Number(btn.dataset.id));
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openEditRoomModal(Number(btn.dataset.id));
+    };
   });
 
   container.querySelectorAll(".delete-room-btn").forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
       handleDeleteRoom(Number(btn.dataset.id), btn.dataset.num);
     };
   });
@@ -875,8 +1437,9 @@ function renderLedger() {
   }
 
   filtered.forEach(rd => {
-    const card = document.createElement("div");
-    card.className = "ledger-item-card";
+    const cell = document.createElement("div");
+    cell.className = "ios-swipe-cell";
+    cell.dataset.recordId = rd.record.id;
     const rec = rd.record;
     const isPaid = rec.isPaid;
     const hasPaidSome = rec.totalPaid > 0 && !isPaid;
@@ -884,92 +1447,138 @@ function renderLedger() {
     const statusClass = isPaid ? "paid" : (hasPaidSome ? "partial" : "unpaid");
     const statusLabel = isPaid ? "Fully Paid" : (hasPaidSome ? "Partially Paid" : "Payment Due");
 
-    card.innerHTML = `
-      <div class="ledger-col-unit">
-        <h4>Room ${escapeHtml(rd.room.roomNumber)}</h4>
-        <span>${escapeHtml(rd.room.tenantName || 'Vacant')}</span>
-        <div style="margin-top: 6px;">
-          <span class="status-chip ${statusClass}">${statusLabel}</span>
-        </div>
-      </div>
-
-      <div class="ledger-col-meter">
-        <div class="meter-box-pill">
-          <span class="label">Start Meter</span>
-          <span class="val">${rec.meterPrevious.toFixed(1)}</span>
-        </div>
-        <div class="meter-box-pill">
-          <span class="label">End Meter</span>
-          <span class="val">${rec.meterCurrent.toFixed(1)}</span>
-        </div>
-        <div class="meter-box-pill">
-          <span class="label">Units Consumed</span>
-          <span class="val" style="color: var(--primary);">${rec.units.toFixed(1)} Units</span>
-        </div>
-        <div class="meter-box-pill">
-          <span class="label">Power Bill</span>
-          <span class="val">${fmtCurrency(rec.electricity)}</span>
-        </div>
-      </div>
-
-      <div class="ledger-col-financials">
-        <div class="financial-total">${fmtCurrency(rec.totalDue)}</div>
-        <div class="financial-balance" style="color: ${rec.balance > 0 ? 'var(--danger)' : 'var(--success)'};">
-          ${rec.balance > 0 ? 'Due: ' + fmtCurrency(rec.balance) : 'Cleared'}
-        </div>
-        <span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 2px;">
-          Paid: ${fmtCurrency(rec.totalPaid)}
-        </span>
-        ${(rd.payments && rd.payments.length > 0) ? `
-          <div class="ledger-payments-strip">
-            ${rd.payments.map((p, idx) => {
-              const isAdv = p.paymentType && p.paymentType.toLowerCase().includes("advance");
-              const isDep = p.paymentType && p.paymentType.toLowerCase().includes("deposit");
-              let badge = '';
-              if (isAdv) badge = `<span class="advance-tag">Adv</span>`;
-              if (isDep) badge = `<span class="advance-tag" style="background:rgba(34,197,94,0.2);color:#86efac;">Dep</span>`;
-              return `
-                <span class="payment-installment-chip ${isAdv ? 'advance' : ''}" title="${escapeHtml(p.notes || p.paymentType || '')} on ${escapeHtml(p.paymentDate || '')}">
-                  <strong>#${idx + 1}</strong> ${fmtCurrency(p.amount)} (${escapeHtml(p.method)}) ${badge}
-                </span>
-              `;
-            }).join("")}
-          </div>
-        ` : ''}
-      </div>
-
-      <div class="ledger-col-actions">
-        <button class="action-btn-primary record-pay-btn" data-rec="${rec.id}" data-due="${rec.balance}" data-unit="${escapeHtml(rd.room.roomNumber)}" data-tenant="${escapeHtml(rd.room.tenantName || '')}" data-rent="${rec.rent}">
+    cell.innerHTML = `
+      <div class="ios-swipe-actions">
+        <button class="ios-swipe-action action-pay" title="Record Rent Payment">
           ${getIconSvg("payments")}
-          <span>${rec.balance > 0 ? (rec.totalPaid > 0 ? '+ Pay 2nd/3rd' : 'Pay') : '+ Advance Pay'}</span>
+          <span>Payment</span>
         </button>
-        <div style="display: flex; gap: 6px;">
-          <button class="pill-action-btn edit-statement-btn" data-rec="${rec.id}" style="flex: 1;" title="Edit Statement Entry">
-            ${getIconSvg("edit")}
-            <span>Edit</span>
+        <button class="ios-swipe-action action-edit" title="Edit Statement Entry">
+          ${getIconSvg("edit")}
+          <span>Edit</span>
+        </button>
+        <button class="ios-swipe-action action-delete" title="Delete Statement Entry">
+          ${getIconSvg("delete")}
+          <span>Delete</span>
+        </button>
+      </div>
+
+      <div class="ios-swipe-content ledger-item-card">
+        <div class="ledger-col-unit" style="cursor: pointer;">
+          <div>
+            <h4>Room ${escapeHtml(rd.room.roomNumber)}</h4>
+            <span>${escapeHtml(rd.room.tenantName || 'Vacant')}</span>
+          </div>
+          <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            <span class="status-chip ${statusClass}">${statusLabel}</span>
+            <svg class="app-icon" style="color: var(--text-muted); width: 16px; height: 16px;"><use href="#icon-chevron_right"></use></svg>
+          </div>
+        </div>
+
+        <div class="ledger-col-meter">
+          <div class="meter-box-pill">
+            <span class="label">Start Meter</span>
+            <span class="val">${rec.meterPrevious.toFixed(1)}</span>
+          </div>
+          <div class="meter-box-pill">
+            <span class="label">End Meter</span>
+            <span class="val">${rec.meterCurrent.toFixed(1)}</span>
+          </div>
+          <div class="meter-box-pill">
+            <span class="label">Units Consumed</span>
+            <span class="val" style="color: var(--primary);">${rec.units.toFixed(1)} Units</span>
+          </div>
+          <div class="meter-box-pill">
+            <span class="label">Power Bill</span>
+            <span class="val">${fmtCurrency(rec.electricity)}</span>
+          </div>
+        </div>
+
+        <div class="ledger-col-financials">
+          <div class="financial-total">${fmtCurrency(rec.totalDue)}</div>
+          <div class="financial-balance" style="color: ${rec.balance > 0 ? 'var(--danger)' : 'var(--success)'};">
+            ${rec.balance > 0 ? 'Due: ' + fmtCurrency(rec.balance) : 'Cleared'}
+          </div>
+          <span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 2px;">
+            Paid: ${fmtCurrency(rec.totalPaid)}
+          </span>
+          ${(rd.payments && rd.payments.length > 0) ? `
+            <div class="ledger-payments-strip">
+              ${rd.payments.map((p, idx) => {
+                const isAdv = p.paymentType && p.paymentType.toLowerCase().includes("advance");
+                const isDep = p.paymentType && p.paymentType.toLowerCase().includes("deposit");
+                let badge = '';
+                if (isAdv) badge = `<span class="advance-tag">Adv</span>`;
+                if (isDep) badge = `<span class="advance-tag" style="background:rgba(34,197,94,0.2);color:#86efac;">Dep</span>`;
+                return `
+                  <span class="payment-installment-chip ${isAdv ? 'advance' : ''}" title="${escapeHtml(p.notes || p.paymentType || '')} on ${escapeHtml(p.paymentDate || '')}">
+                    <strong>#${idx + 1}</strong> ${fmtCurrency(p.amount)} (${escapeHtml(p.method)}) ${badge}
+                  </span>
+                `;
+              }).join("")}
+            </div>
+          ` : ''}
+        </div>
+
+        <div class="ledger-col-actions">
+          <button class="action-btn-primary record-pay-btn" data-rec="${rec.id}" data-due="${rec.balance}" data-unit="${escapeHtml(rd.room.roomNumber)}" data-tenant="${escapeHtml(rd.room.tenantName || '')}" data-rent="${rec.rent}">
+            ${getIconSvg("payments")}
+            <span>${rec.balance > 0 ? (rec.totalPaid > 0 ? '+ Pay 2nd/3rd' : 'Pay') : '+ Advance Pay'}</span>
           </button>
-          <button class="pill-action-btn btn-danger delete-ledger-btn" data-rec="${rec.id}" data-room="${escapeHtml(rd.room.roomNumber)}" title="Delete Statement Entry">
-            ${getIconSvg("delete")}
-          </button>
+          <div style="display: flex; gap: 6px;">
+            <button class="pill-action-btn edit-statement-btn" data-rec="${rec.id}" style="flex: 1;" title="Edit Statement Entry">
+              ${getIconSvg("edit")}
+              <span>Edit</span>
+            </button>
+            <button class="pill-action-btn btn-danger delete-ledger-btn" data-rec="${rec.id}" data-room="${escapeHtml(rd.room.roomNumber)}" title="Delete Statement Entry">
+              ${getIconSvg("delete")}
+            </button>
+          </div>
         </div>
       </div>
     `;
-    container.appendChild(card);
+
+    container.appendChild(cell);
+
+    // Attach iOS Touch-Drag Swipe Actions
+    makeSwipeable(cell, {
+      onPay: () => openPaymentModal(
+        rec.id,
+        rd.room.roomNumber,
+        rd.room.tenantName || '',
+        rec.balance,
+        rec.rent
+      ),
+      onEdit: () => openStatementModal(rd),
+      onDelete: () => handleDeleteStatement(rec.id, rd.room.roomNumber)
+    });
   });
 
-  // Bind Actions
+  // Tapping the unit header opens the edit statement modal
+  container.querySelectorAll(".ledger-col-unit").forEach(hdr => {
+    hdr.onclick = () => {
+      const editBtn = hdr.closest(".ledger-item-card").querySelector(".edit-statement-btn");
+      if (editBtn) editBtn.click();
+    };
+  });
+
+  // Bind inside action buttons
   container.querySelectorAll(".record-pay-btn").forEach(btn => {
-    btn.onclick = () => openPaymentModal(
-      Number(btn.dataset.rec),
-      btn.dataset.unit,
-      btn.dataset.tenant,
-      Number(btn.dataset.due),
-      Number(btn.dataset.rent || 0)
-    );
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      openPaymentModal(
+        Number(btn.dataset.rec),
+        btn.dataset.unit,
+        btn.dataset.tenant,
+        Number(btn.dataset.due),
+        Number(btn.dataset.rent || 0)
+      );
+    };
   });
 
   container.querySelectorAll(".edit-statement-btn").forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
       const recId = Number(btn.dataset.rec);
       const rd = state.records.find(r => r.record.id === recId);
       if (rd) openStatementModal(rd);
@@ -977,7 +1586,8 @@ function renderLedger() {
   });
 
   container.querySelectorAll(".delete-ledger-btn").forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
       const recId = Number(btn.dataset.rec);
       const roomNum = btn.dataset.room;
       handleDeleteStatement(recId, roomNum);
@@ -986,14 +1596,295 @@ function renderLedger() {
 }
 
 // -----------------------------------------------------------------------------
-// 4. Matrix Spreadsheet Renderer & Inline Editor
+// 4. Matrix Spreadsheet Renderer, Annual Matrix & Cell Inspection
 // -----------------------------------------------------------------------------
 
-function renderSpreadsheet() {
+async function renderSpreadsheet() {
   const tbody = document.getElementById("matrixTableBody");
+  const thead = document.getElementById("matrixTableHead");
   if (!tbody) return;
-  tbody.innerHTML = "";
 
+  if (state.spreadsheetMode === "annual") {
+    await renderAnnualMatrixSpreadsheet(thead, tbody);
+  } else {
+    renderMonthlyDetailSpreadsheet(thead, tbody);
+  }
+}
+
+async function renderAnnualMatrixSpreadsheet(thead, tbody) {
+  // Render Annual Headers
+  if (thead) {
+    thead.innerHTML = `
+      <tr>
+        <th class="sortable-th sticky-first-col" data-col="room" style="min-width: 135px;" title="Click to sort by Room">Room & Tenant <span class="th-sort-arrow"></span></th>
+        <th data-col-month="1" title="January">Jan</th>
+        <th data-col-month="2" title="February">Feb</th>
+        <th data-col-month="3" title="March">Mar</th>
+        <th data-col-month="4" title="April">Apr</th>
+        <th data-col-month="5" title="May">May</th>
+        <th data-col-month="6" title="June">Jun</th>
+        <th data-col-month="7" title="July">Jul</th>
+        <th data-col-month="8" title="August">Aug</th>
+        <th data-col-month="9" title="September">Sep</th>
+        <th data-col-month="10" title="October">Oct</th>
+        <th data-col-month="11" title="November">Nov</th>
+        <th data-col-month="12" title="December">Dec</th>
+        <th class="sortable-th" data-col="due" style="text-align: right;" title="Click to sort by Annual Due">Annual Due <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="paid" style="text-align: right;" title="Click to sort by Annual Paid">Annual Paid <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="balance" style="text-align: right;" title="Click to sort by Annual Balance">Balance <span class="th-sort-arrow"></span></th>
+      </tr>
+    `;
+
+    // Re-bind header sort clicks
+    thead.querySelectorAll("th.sortable-th").forEach(th => {
+      th.onclick = () => {
+        const col = th.dataset.col;
+        if (!col) return;
+        state.spreadsheetSort = (state.spreadsheetSort === `${col}-asc`) ? `${col}-desc` : `${col}-asc`;
+        const sortSelect = document.getElementById("matrixSortSelect");
+        if (sortSelect) {
+          const opt = sortSelect.querySelector(`option[value="${state.spreadsheetSort}"]`);
+          if (opt) sortSelect.value = state.spreadsheetSort;
+        }
+        renderSpreadsheet();
+      };
+    });
+  }
+
+  // Update header arrows
+  document.querySelectorAll("#matrixTable th.sortable-th").forEach(th => {
+    const col = th.dataset.col;
+    const arrow = th.querySelector(".th-sort-arrow");
+    if (arrow) {
+      if (state.spreadsheetSort.startsWith(col)) {
+        arrow.textContent = state.spreadsheetSort.endsWith("desc") ? " ▼" : " ▲";
+      } else {
+        arrow.textContent = "";
+      }
+    }
+  });
+
+  // Fetch Annual Matrix Data
+  state.annualMatrixData = await callAPI("get_annual_matrix", state.selectedBuildingId, state.currentYear);
+  if (!state.annualMatrixData || !state.annualMatrixData.rows) {
+    tbody.innerHTML = `<tr><td colspan="16" style="text-align: center; padding: 36px; color: var(--text-muted); font-size: 13px;">No matrix records found.</td></tr>`;
+    return;
+  }
+
+  let rows = [...state.annualMatrixData.rows];
+  if (state.searchQuery) {
+    const q = state.searchQuery.toLowerCase();
+    rows = rows.filter(r => {
+      const roomNum = (r.room.roomNumber || "").toLowerCase();
+      const tenant = (r.room.tenantName || "").toLowerCase();
+      const building = (r.room.buildingName || "").toLowerCase();
+      return roomNum.includes(q) || tenant.includes(q) || building.includes(q);
+    });
+  }
+
+  // Sort rows
+  rows.sort((a, b) => {
+    const rA = a.room;
+    const rB = b.room;
+    const numA = parseInt((rA.roomNumber || "").replace(/\D/g, "")) || 0;
+    const numB = parseInt((rB.roomNumber || "").replace(/\D/g, "")) || 0;
+
+    switch (state.spreadsheetSort) {
+      case "room-asc":
+        return numA !== numB ? numA - numB : (rA.roomNumber || "").localeCompare(rB.roomNumber || "");
+      case "room-desc":
+        return numA !== numB ? numB - numA : (rB.roomNumber || "").localeCompare(rA.roomNumber || "");
+      case "building-asc":
+        return (rA.buildingName || "").localeCompare(rB.buildingName || "") || (numA - numB);
+      case "building-desc":
+        return (rB.buildingName || "").localeCompare(rA.buildingName || "") || (numB - numA);
+      case "tenant-asc":
+        return (rA.tenantName || "").localeCompare(rB.tenantName || "") || (numA - numB);
+      case "tenant-desc":
+        return (rB.tenantName || "").localeCompare(rA.tenantName || "") || (numB - numA);
+      case "due-desc":
+        return b.annualDue - a.annualDue;
+      case "due-asc":
+        return a.annualDue - b.annualDue;
+      case "balance-desc":
+        return b.annualBalance - a.annualBalance;
+      case "balance-asc":
+        return a.annualBalance - b.annualBalance;
+      case "status-unpaid":
+        return (b.annualBalance > 0 ? 1 : 0) - (a.annualBalance > 0 ? 1 : 0);
+      default:
+        return numA !== numB ? numA - numB : (rA.roomNumber || "").localeCompare(rB.roomNumber || "");
+    }
+  });
+
+  tbody.innerHTML = "";
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="16" style="text-align: center; padding: 36px; color: var(--text-muted); font-size: 13px;">No rooms match your filter or search.</td></tr>`;
+    return;
+  }
+
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.dataset.roomId = r.room.id;
+
+    // Sticky First Column: Room Number & Tenant Name with vertical divider
+    let rowHtml = `
+      <td class="sticky-first-col" data-room-id="${r.room.id}">
+        <div class="matrix-room-cell">
+          <div class="matrix-room-badge">
+            <span>Room ${escapeHtml(r.room.roomNumber)}</span>
+          </div>
+          <div class="matrix-tenant-name">${escapeHtml(r.room.tenantName || 'Vacant')}</div>
+        </div>
+      </td>
+    `;
+
+    // 12 Months
+    for (let m = 1; m <= 12; m++) {
+      const monthItem = r.months[m];
+      if (!monthItem) {
+        rowHtml += `
+          <td class="matrix-cell empty-cell" data-room-id="${r.room.id}" data-month="${m}" data-year="${state.currentYear}">
+            <div class="matrix-cell-content">
+              <span class="matrix-cell-pill empty">—</span>
+            </div>
+          </td>
+        `;
+      } else {
+        const rec = monthItem.record;
+        const isPaid = rec.isPaid;
+        const statusClass = isPaid ? "paid" : (rec.totalPaid > 0 ? "partial" : "unpaid");
+        const statusLabel = isPaid ? "Paid" : (rec.totalPaid > 0 ? "Partial" : "Unpaid");
+        const displayAmt = isPaid ? rec.totalPaid : (rec.balance > 0 ? rec.balance : rec.totalDue);
+
+        rowHtml += `
+          <td class="matrix-cell" data-room-id="${r.room.id}" data-month="${m}" data-year="${state.currentYear}" data-rec-id="${rec.id}">
+            <div class="matrix-cell-content">
+              <span class="matrix-cell-pill ${statusClass}">
+                <span class="matrix-status-dot ${statusClass}"></span>
+                ${statusLabel}
+              </span>
+              <span class="matrix-cell-amt">${fmtCurrency(displayAmt)}</span>
+            </div>
+          </td>
+        `;
+      }
+    }
+
+    // Annual Totals
+    const balColor = r.annualBalance > 0 ? 'var(--danger)' : 'var(--success)';
+    rowHtml += `
+      <td style="text-align: right; font-weight: 600;" class="matrix-total-val">${fmtCurrency(r.annualDue)}</td>
+      <td style="text-align: right; font-weight: 600; color: var(--success);" class="matrix-total-val">${fmtCurrency(r.annualPaid)}</td>
+      <td style="text-align: right; font-weight: 700; color: ${balColor};" class="matrix-total-val">${fmtCurrency(r.annualBalance)}</td>
+    `;
+
+    tr.innerHTML = rowHtml;
+    tbody.appendChild(tr);
+  });
+
+  // Footer Row: Monthly and Grand Totals
+  const tfoot = document.createElement("tr");
+  tfoot.className = "matrix-footer-totals-row";
+  tfoot.style.fontWeight = "700";
+  tfoot.style.background = "var(--bg-elevated)";
+  let fHtml = `<td class="sticky-first-col" style="background: var(--bg-elevated); font-weight: 700;">TOTALS</td>`;
+  for (let m = 1; m <= 12; m++) {
+    const tot = state.annualMatrixData.columnTotals[m] || { due: 0, paid: 0, balance: 0 };
+    fHtml += `
+      <td class="matrix-cell" style="text-align: center; font-size: 11px;">
+        <div style="color: var(--text-muted); font-size: 10px;">Due: ${fmtCurrency(tot.due)}</div>
+        <div style="color: ${tot.balance > 0 ? 'var(--danger)' : 'var(--success)'}; font-weight: 700;">Bal: ${fmtCurrency(tot.balance)}</div>
+      </td>
+    `;
+  }
+  fHtml += `
+    <td style="text-align: right;">${fmtCurrency(state.annualMatrixData.grandTotalDue)}</td>
+    <td style="text-align: right; color: var(--success);">${fmtCurrency(state.annualMatrixData.grandTotalPaid)}</td>
+    <td style="text-align: right; color: ${state.annualMatrixData.grandTotalBalance > 0 ? 'var(--danger)' : 'var(--success)'};">${fmtCurrency(state.annualMatrixData.grandTotalBalance)}</td>
+  `;
+  tfoot.innerHTML = fHtml;
+  tbody.appendChild(tfoot);
+
+  // Bind Cell Tap / Click Inspection
+  tbody.querySelectorAll(".matrix-cell").forEach(td => {
+    td.onclick = () => {
+      tbody.querySelectorAll(".matrix-cell.cell-selected").forEach(c => c.classList.remove("cell-selected"));
+      td.classList.add("cell-selected");
+
+      const roomId = Number(td.dataset.roomId);
+      const month = Number(td.dataset.month);
+      const year = Number(td.dataset.year) || state.currentYear;
+
+      const rowItem = state.annualMatrixData.rows.find(r => r.room.id === roomId);
+      if (!rowItem) return;
+      const monthItem = rowItem.months[month];
+
+      openCellInspection({
+        room: rowItem.room,
+        month: month,
+        year: year,
+        record: monthItem ? monthItem.record : null,
+        payments: monthItem ? monthItem.payments : []
+      });
+    };
+  });
+}
+
+function renderMonthlyDetailSpreadsheet(thead, tbody) {
+  // Render Monthly Detail Headers
+  if (thead) {
+    thead.innerHTML = `
+      <tr>
+        <th class="sortable-th sticky-first-col" data-col="room" title="Click to sort by Room">Room & Tenant <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="building" title="Click to sort by Building">Building <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="status" title="Click to sort by Status">Status <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="rent" title="Click to sort by Rent">Rent (₹) <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="startMeter" title="Click to sort by Start Meter">Start Meter <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="endMeter" title="Click to sort by End Meter">End Meter <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="units" title="Click to sort by Units Consumed">Units Consumed <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="rate" title="Click to sort by Rate">Rate (₹/Unit) <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="electric" title="Click to sort by Electricity">Electricity (₹) <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="other" title="Click to sort by Other">Other (₹) <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="prevBal" title="Click to sort by Prev Bal">Prev Bal (₹) <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="totalDue" title="Click to sort by Total Due">Total Due (₹) <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="paid" title="Click to sort by Paid">Paid (₹) <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="balance" title="Click to sort by Balance">Balance (₹) <span class="th-sort-arrow"></span></th>
+        <th class="sortable-th" data-col="paymentStatus" title="Click to sort by Payment Status">Payment Status <span class="th-sort-arrow"></span></th>
+        <th>Actions</th>
+      </tr>
+    `;
+
+    // Re-bind header sort clicks
+    thead.querySelectorAll("th.sortable-th").forEach(th => {
+      th.onclick = () => {
+        const col = th.dataset.col;
+        if (!col) return;
+        state.spreadsheetSort = (state.spreadsheetSort === `${col}-asc`) ? `${col}-desc` : `${col}-asc`;
+        const sortSelect = document.getElementById("matrixSortSelect");
+        if (sortSelect) {
+          const opt = sortSelect.querySelector(`option[value="${state.spreadsheetSort}"]`);
+          if (opt) sortSelect.value = state.spreadsheetSort;
+        }
+        renderSpreadsheet();
+      };
+    });
+  }
+
+  // Update header arrows
+  document.querySelectorAll("#matrixTable th.sortable-th").forEach(th => {
+    const col = th.dataset.col;
+    const arrow = th.querySelector(".th-sort-arrow");
+    if (arrow) {
+      if (state.spreadsheetSort.startsWith(col)) {
+        arrow.textContent = state.spreadsheetSort.endsWith("desc") ? " ▼" : " ▲";
+      } else {
+        arrow.textContent = "";
+      }
+    }
+  });
+
+  tbody.innerHTML = "";
   let records = state.records;
   if (state.searchQuery) {
     const q = state.searchQuery.toLowerCase();
@@ -1044,27 +1935,14 @@ function renderSpreadsheet() {
       case "rent-asc":
         return recA.rent - recB.rent;
       case "status-unpaid":
-        return (recB.balance > 0 ? 1 : 0) - (recA.balance > 0 ? 1 : 0);
+        return (recB.balance > 0 ? 1 : 0) - (a.balance > 0 ? 1 : 0);
       default:
         return numA !== numB ? numA - numB : (rA.roomNumber || "").localeCompare(rB.roomNumber || "");
     }
   });
 
-  // Update header arrows
-  document.querySelectorAll("#matrixTable th.sortable-th").forEach(th => {
-    const col = th.dataset.col;
-    const arrow = th.querySelector(".th-sort-arrow");
-    if (arrow) {
-      if (state.spreadsheetSort.startsWith(col)) {
-        arrow.textContent = state.spreadsheetSort.endsWith("desc") ? " ▼" : " ▲";
-      } else {
-        arrow.textContent = "";
-      }
-    }
-  });
-
   if (sorted.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="15" style="text-align: center; padding: 36px; color: var(--text-muted); font-size: 13px;">No statement entries match your filter or search.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="16" style="text-align: center; padding: 36px; color: var(--text-muted); font-size: 13px;">No statement entries match your filter or search.</td></tr>`;
     return;
   }
 
@@ -1078,9 +1956,13 @@ function renderSpreadsheet() {
 
     if (state.spreadsheetEditMode) {
       tr.innerHTML = `
-        <td><strong>${escapeHtml(rd.room.roomNumber)}</strong></td>
+        <td class="sticky-first-col">
+          <div class="matrix-room-cell">
+            <div class="matrix-room-badge">Room ${escapeHtml(rd.room.roomNumber)}</div>
+            <div class="matrix-tenant-name">${escapeHtml(rd.room.tenantName || 'Vacant')}</div>
+          </div>
+        </td>
         <td><span style="font-size: 11px; color: var(--text-secondary);">${escapeHtml(rd.room.buildingName || 'Main')}</span></td>
-        <td>${escapeHtml(rd.room.tenantName || '—')}</td>
         <td><span class="status-chip ${rd.room.status === 'Lended' ? 'occupied' : 'vacant'}">${rd.room.status}</span></td>
         <td><input type="number" class="spreadsheet-inline-input inline-rent" data-rec="${rec.id}" value="${rec.rent}" step="100" min="0"></td>
         <td><input type="number" class="spreadsheet-inline-input inline-prev" data-rec="${rec.id}" value="${rec.meterPrevious}" step="0.1" min="0"></td>
@@ -1103,22 +1985,26 @@ function renderSpreadsheet() {
       `;
     } else {
       tr.innerHTML = `
-        <td><strong>${escapeHtml(rd.room.roomNumber)}</strong></td>
-        <td><span style="font-size: 11px; color: var(--text-secondary);">${escapeHtml(rd.room.buildingName || 'Main')}</span></td>
-        <td>${escapeHtml(rd.room.tenantName || '—')}</td>
-        <td><span class="status-chip ${rd.room.status === 'Lended' ? 'occupied' : 'vacant'}">${rd.room.status}</span></td>
-        <td>${fmtCurrency(rec.rent)}</td>
-        <td>${rec.meterPrevious.toFixed(1)}</td>
-        <td>${rec.meterCurrent.toFixed(1)}</td>
-        <td style="font-weight: 600; color: var(--primary);">${rec.units.toFixed(1)}</td>
-        <td>${fmtCurrency(rec.meterRatePerUnit)}</td>
-        <td>${fmtCurrency(rec.electricity)}</td>
-        <td>${fmtCurrency(rec.otherCharges)}</td>
-        <td>${fmtCurrency(rec.previousBalance)}</td>
-        <td><strong>${fmtCurrency(rec.totalDue)}</strong></td>
-        <td>${fmtCurrency(rec.totalPaid)}</td>
-        <td style="color: ${rec.balance > 0 ? 'var(--danger)' : 'var(--success)'}; font-weight: 700;">${fmtCurrency(rec.balance)}</td>
-        <td><span class="status-chip ${statusClass}">${statusText}</span></td>
+        <td class="sticky-first-col matrix-cell" data-room-id="${rd.room.id}">
+          <div class="matrix-room-cell">
+            <div class="matrix-room-badge">Room ${escapeHtml(rd.room.roomNumber)}</div>
+            <div class="matrix-tenant-name">${escapeHtml(rd.room.tenantName || 'Vacant')}</div>
+          </div>
+        </td>
+        <td class="matrix-cell"><span style="font-size: 11px; color: var(--text-secondary);">${escapeHtml(rd.room.buildingName || 'Main')}</span></td>
+        <td class="matrix-cell"><span class="status-chip ${rd.room.status === 'Lended' ? 'occupied' : 'vacant'}">${rd.room.status}</span></td>
+        <td class="matrix-cell">${fmtCurrency(rec.rent)}</td>
+        <td class="matrix-cell">${rec.meterPrevious.toFixed(1)}</td>
+        <td class="matrix-cell">${rec.meterCurrent.toFixed(1)}</td>
+        <td class="matrix-cell" style="font-weight: 600; color: var(--primary);">${rec.units.toFixed(1)}</td>
+        <td class="matrix-cell">${fmtCurrency(rec.meterRatePerUnit)}</td>
+        <td class="matrix-cell">${fmtCurrency(rec.electricity)}</td>
+        <td class="matrix-cell">${fmtCurrency(rec.otherCharges)}</td>
+        <td class="matrix-cell">${fmtCurrency(rec.previousBalance)}</td>
+        <td class="matrix-cell"><strong>${fmtCurrency(rec.totalDue)}</strong></td>
+        <td class="matrix-cell">${fmtCurrency(rec.totalPaid)}</td>
+        <td class="matrix-cell" style="color: ${rec.balance > 0 ? 'var(--danger)' : 'var(--success)'}; font-weight: 700;">${fmtCurrency(rec.balance)}</td>
+        <td class="matrix-cell"><span class="status-chip ${statusClass}">${statusText}</span></td>
         <td>
           <button class="pill-action-btn edit-matrix-row-btn" data-rec="${rec.id}">
             ${getIconSvg("edit")}
@@ -1133,12 +2019,36 @@ function renderSpreadsheet() {
 
   // Bind Row Edit Buttons
   tbody.querySelectorAll(".edit-matrix-row-btn").forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
       const recId = Number(btn.dataset.rec);
       const rd = state.records.find(r => r.record.id === recId);
       if (rd) openStatementModal(rd);
     };
   });
+
+  // Bind Cell Clicks in Read-Only Mode
+  if (!state.spreadsheetEditMode) {
+    tbody.querySelectorAll("tr").forEach(row => {
+      row.querySelectorAll(".matrix-cell").forEach(cell => {
+        cell.onclick = () => {
+          tbody.querySelectorAll(".matrix-cell.cell-selected").forEach(c => c.classList.remove("cell-selected"));
+          cell.classList.add("cell-selected");
+          const recId = Number(row.dataset.recId);
+          const rd = state.records.find(r => r.record.id === recId);
+          if (rd) {
+            openCellInspection({
+              room: rd.room,
+              month: state.currentMonth,
+              year: state.currentYear,
+              record: rd.record,
+              payments: rd.payments || []
+            });
+          }
+        };
+      });
+    });
+  }
 
   // Bind Inline Inputs Auto-Save in Edit Mode
   if (state.spreadsheetEditMode) {
@@ -1155,7 +2065,6 @@ function renderSpreadsheet() {
       const rate = Math.max(0, parseFloat(tr.querySelector(".inline-rate").value) || 0);
       const other = Math.max(0, parseFloat(tr.querySelector(".inline-other").value) || 0);
 
-      // Update local state immediately
       const units = Math.max(0, curr - prev);
       const electricity = units * rate;
       const totalDue = rent + electricity + other + rd.record.previousBalance;
@@ -1173,39 +2082,35 @@ function renderSpreadsheet() {
       rd.record.balance = balance;
       rd.record.isPaid = isPaid;
 
-      // Update table cells live
+      // Update UI row elements
       tr.querySelector(".col-units").textContent = units.toFixed(1);
       tr.querySelector(".col-electric").textContent = fmtCurrency(electricity);
       tr.querySelector(".col-total").innerHTML = `<strong>${fmtCurrency(totalDue)}</strong>`;
       const balEl = tr.querySelector(".col-balance");
       balEl.textContent = fmtCurrency(balance);
-      balEl.style.color = balance > 0 ? 'var(--danger)' : 'var(--success)';
+      balEl.style.color = balance > 0 ? "var(--danger)" : "var(--success)";
+
       const statusEl = tr.querySelector(".col-status");
-      statusEl.innerHTML = `<span class="status-chip ${isPaid ? 'paid' : (rd.record.totalPaid > 0 ? 'partial' : 'unpaid')}">${isPaid ? 'Paid' : (rd.record.totalPaid > 0 ? 'Partial' : 'Unpaid')}</span>`;
+      const statusClass = isPaid ? "paid" : (rd.record.totalPaid > 0 ? "partial" : "unpaid");
+      const statusText = isPaid ? "Paid" : (rd.record.totalPaid > 0 ? "Partial" : "Unpaid");
+      statusEl.innerHTML = `<span class="status-chip ${statusClass}">${statusText}</span>`;
 
-      // Flash green feedback
+      // Persist to database
       input.classList.add("saved-flash");
-      setTimeout(() => input.classList.remove("saved-flash"), 900);
+      setTimeout(() => input.classList.remove("saved-flash"), 800);
 
-      // Save to SQLite
       await callAPI(
-        "save_meter_reading",
+        "update_monthly_record",
         recId,
-        rd.room.id,
-        state.currentMonth,
-        state.currentYear,
+        rent,
         prev,
         curr,
         rate,
-        rent,
         other,
         rd.record.otherChargesNote || "",
-        rd.record.previousBalance || 0.0,
-        rd.record.note || ""
+        rd.record.note || "",
+        rd.record.meterReadAt || ""
       );
-
-      // Refresh overview KPIs in background
-      renderDashboardOverview();
     };
 
     tbody.querySelectorAll(".spreadsheet-inline-input").forEach(input => {
@@ -1222,6 +2127,7 @@ function renderSpreadsheet() {
 }
 
 function setupSpreadsheetControls() {
+  // 1. Sort Dropdown
   const sortSelect = document.getElementById("matrixSortSelect");
   if (sortSelect) {
     sortSelect.onchange = () => {
@@ -1230,12 +2136,49 @@ function setupSpreadsheetControls() {
     };
   }
 
+  // 2. Mode Switcher (Annual Matrix vs Monthly Detail)
+  const modeSwitch = document.getElementById("matrixModeSwitch");
+  if (modeSwitch) {
+    modeSwitch.querySelectorAll(".ios-seg-btn").forEach(btn => {
+      btn.onclick = () => {
+        const mode = btn.dataset.mode;
+        if (state.spreadsheetMode === mode) return;
+        state.spreadsheetMode = mode;
+        modeSwitch.querySelectorAll(".ios-seg-btn").forEach(b => {
+          b.classList.toggle("active", b === btn);
+        });
+        renderSpreadsheet();
+      };
+    });
+  }
+
+  // 3. Quick Month / Quarter Jump Pills
+  const jumpPills = document.getElementById("matrixJumpPills");
+  if (jumpPills) {
+    jumpPills.querySelectorAll(".ios-pill").forEach(pill => {
+      pill.onclick = () => {
+        const jump = pill.dataset.jump;
+        state.spreadsheetJump = jump;
+        jumpPills.querySelectorAll(".ios-pill").forEach(p => p.classList.toggle("active", p === pill));
+        handleMatrixJump(jump);
+      };
+    });
+  }
+
+  // 4. Edit Mode Toggle
   const editBtn = document.getElementById("toggleSpreadsheetEditBtn");
   const editLbl = document.getElementById("spreadsheetEditModeLabel");
   if (editBtn) {
     editBtn.onclick = () => {
       state.spreadsheetEditMode = !state.spreadsheetEditMode;
       if (state.spreadsheetEditMode) {
+        // Switch to monthly mode for inline editing if in annual
+        if (state.spreadsheetMode === "annual") {
+          state.spreadsheetMode = "monthly";
+          document.querySelectorAll("#matrixModeSwitch .ios-seg-btn").forEach(b => {
+            b.classList.toggle("active", b.dataset.mode === "monthly");
+          });
+        }
         editBtn.classList.add("active");
         if (editLbl) editLbl.textContent = "Done Editing";
         showToast("Spreadsheet Inline Edit Mode Enabled. Click any number to edit.", "info");
@@ -1247,23 +2190,251 @@ function setupSpreadsheetControls() {
       renderSpreadsheet();
     };
   }
+}
 
-  // Header click sorting
-  document.querySelectorAll("#matrixTable th.sortable-th").forEach(th => {
-    th.onclick = () => {
-      const col = th.dataset.col;
-      if (!col) return;
-      if (state.spreadsheetSort === `${col}-asc`) {
-        state.spreadsheetSort = `${col}-desc`;
+function handleMatrixJump(jump) {
+  const scrollContainer = document.getElementById("matrixScrollWrapper");
+  if (!scrollContainer) return;
+
+  if (state.spreadsheetMode === "annual") {
+    let targetMonth = null;
+    if (jump === "all") {
+      scrollContainer.scrollTo({ left: 0, behavior: "smooth" });
+      return;
+    } else if (jump === "current") {
+      targetMonth = state.currentMonth;
+    } else if (jump === "q1") {
+      targetMonth = 1;
+    } else if (jump === "q2") {
+      targetMonth = 4;
+    } else if (jump === "q3") {
+      targetMonth = 7;
+    } else if (jump === "q4") {
+      targetMonth = 10;
+    }
+
+    if (targetMonth !== null) {
+      const targetTh = scrollContainer.querySelector(`th[data-col-month="${targetMonth}"]`);
+      if (targetTh) {
+        const stickyCol = scrollContainer.querySelector("th.sticky-first-col");
+        const stickyWidth = stickyCol ? stickyCol.offsetWidth : 120;
+        const targetLeft = Math.max(0, targetTh.offsetLeft - stickyWidth - 10);
+        scrollContainer.scrollTo({ left: targetLeft, behavior: "smooth" });
+
+        // Highlight column header
+        targetTh.classList.remove("col-jump-highlight");
+        void targetTh.offsetWidth;
+        targetTh.classList.add("col-jump-highlight");
+      }
+    }
+  } else {
+    // In monthly breakdown mode, jump switches the active month
+    if (jump === "current") {
+      state.currentMonth = new Date().getMonth() + 1;
+    } else if (jump === "q1") {
+      state.currentMonth = 1;
+    } else if (jump === "q2") {
+      state.currentMonth = 4;
+    } else if (jump === "q3") {
+      state.currentMonth = 7;
+    } else if (jump === "q4") {
+      state.currentMonth = 10;
+    }
+    refreshData();
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Cell Tap Inspection Bottom Card Drawer & Gestures
+// -----------------------------------------------------------------------------
+
+function openCellInspection(data) {
+  state.activeInspectionData = data;
+  const sheet = document.getElementById("cellInspectionSheet");
+  const backdrop = document.getElementById("cellInspectionBackdrop");
+  if (!sheet || !backdrop) return;
+
+  const room = data.room || {};
+  const rec = data.record || {};
+  const monthName = MONTH_NAMES[(data.month || state.currentMonth || 1) - 1];
+  const year = data.year || state.currentYear;
+  const isPaid = rec.isPaid || false;
+  const totalPaid = rec.totalPaid || 0;
+  const totalDue = rec.totalDue || (room.agreedRent || 0);
+  const balance = (rec.balance !== undefined) ? rec.balance : (totalDue - totalPaid);
+  const status = isPaid ? "Paid" : (totalPaid > 0 ? "Partial" : "Unpaid");
+
+  // Populate Room & Property
+  const roomBadgeEl = document.getElementById("sheetRoomBadge");
+  if (roomBadgeEl) roomBadgeEl.textContent = `Room ${room.roomNumber || ''}`;
+  const bldgEl = document.getElementById("sheetBuildingName");
+  if (bldgEl) bldgEl.textContent = room.buildingName || 'Main Property';
+  const tenantEl = document.getElementById("sheetTenantName");
+  if (tenantEl) tenantEl.textContent = room.tenantName || 'Vacant';
+
+  // Period & iOS Badge
+  const periodEl = document.getElementById("sheetMonthPeriod");
+  if (periodEl) periodEl.textContent = `${monthName} ${year}`;
+  const badgeEl = document.getElementById("sheetStatusBadge");
+  if (badgeEl) {
+    badgeEl.className = `ios-badge ${status.toLowerCase()}`;
+    badgeEl.textContent = status;
+  }
+
+  // Financial KPIs
+  const dueEl = document.getElementById("sheetTotalDue");
+  if (dueEl) dueEl.textContent = fmtCurrency(totalDue);
+  const paidEl = document.getElementById("sheetPaidAmount");
+  if (paidEl) paidEl.textContent = fmtCurrency(totalPaid);
+  const balEl = document.getElementById("sheetBalance");
+  if (balEl) {
+    balEl.textContent = fmtCurrency(balance);
+    balEl.style.color = balance > 0 ? "var(--danger)" : "var(--success)";
+  }
+
+  // Inset Breakdown Group
+  const rentVal = document.getElementById("sheetRentVal");
+  if (rentVal) rentVal.textContent = fmtCurrency(rec.rent || room.agreedRent || 0);
+  const unitsVal = document.getElementById("sheetUnitsVal");
+  if (unitsVal) unitsVal.textContent = fmtUnits(rec.units || 0);
+  const powerVal = document.getElementById("sheetPowerVal");
+  if (powerVal) powerVal.textContent = fmtCurrency(rec.electricity || 0);
+  const otherVal = document.getElementById("sheetOtherVal");
+  if (otherVal) otherVal.textContent = fmtCurrency(rec.otherCharges || 0);
+  const prevVal = document.getElementById("sheetPrevBalVal");
+  if (prevVal) prevVal.textContent = fmtCurrency(rec.previousBalance || 0);
+
+  // Payments List
+  const paymentsListEl = document.getElementById("sheetPaymentsList");
+  const paymentsCountEl = document.getElementById("sheetPaymentsCount");
+  const payments = data.payments || [];
+  if (paymentsCountEl) paymentsCountEl.textContent = payments.length;
+  if (paymentsListEl) {
+    paymentsListEl.innerHTML = "";
+    if (payments.length === 0) {
+      paymentsListEl.innerHTML = `
+        <div style="padding: 10px; text-align: center; font-size: 11px; color: var(--text-muted); background: rgba(255,255,255,0.02); border-radius: 8px;">
+          No payment transactions logged for this month.
+        </div>
+      `;
+    } else {
+      payments.forEach(p => {
+        const item = document.createElement("div");
+        item.className = "ios-sheet-payment-item";
+        item.innerHTML = `
+          <div class="ios-sheet-payment-left">
+            <span class="ios-sheet-payment-date">${p.paidAt || 'Recent'}</span>
+            <span class="ios-sheet-payment-meta">${escapeHtml(p.method || 'Cash')} · ${escapeHtml(p.purpose || 'Rent')}</span>
+          </div>
+          <div class="ios-sheet-payment-amount">+${fmtCurrency(p.amount)}</div>
+        `;
+        paymentsListEl.appendChild(item);
+      });
+    }
+  }
+
+  // Action Buttons
+  const addPayBtn = document.getElementById("sheetAddPaymentBtn");
+  if (addPayBtn) {
+    addPayBtn.onclick = async () => {
+      closeCellInspection();
+      let recordId = rec.id;
+      if (!recordId) {
+        const recs = await callAPI("get_records", room.buildingId, data.month || state.currentMonth, year);
+        const found = (recs || []).find(r => r.room.id === room.id);
+        if (found) recordId = found.record.id;
+      }
+      if (recordId) {
+        openPaymentModal(recordId, room.roomNumber, room.tenantName, balance, rec.rent || room.agreedRent || 0);
       } else {
-        state.spreadsheetSort = `${col}-asc`;
+        showToast("Opening statement entry to record payment...", "info");
+        openAddStatementModal();
       }
-      if (sortSelect) {
-        const matchingOpt = sortSelect.querySelector(`option[value="${state.spreadsheetSort}"]`);
-        if (matchingOpt) sortSelect.value = state.spreadsheetSort;
-      }
-      renderSpreadsheet();
     };
+  }
+
+  const viewHistBtn = document.getElementById("sheetViewHistoryBtn");
+  if (viewHistBtn) {
+    viewHistBtn.onclick = () => {
+      closeCellInspection();
+      if (data.record) {
+        openStatementModal({
+          room: room,
+          record: rec,
+          payments: data.payments || []
+        });
+      } else {
+        showToast(`No monthly statement entry created yet for Room ${room.roomNumber} in ${monthName}.`, "info");
+      }
+    };
+  }
+
+  // Open Bottom Sheet with iOS Spring animation
+  backdrop.classList.add("open");
+  sheet.style.transform = "translateY(0)";
+}
+
+function closeCellInspection() {
+  const sheet = document.getElementById("cellInspectionSheet");
+  const backdrop = document.getElementById("cellInspectionBackdrop");
+  if (sheet) sheet.style.transform = "translateY(100%)";
+  if (backdrop) backdrop.classList.remove("open");
+  state.activeInspectionData = null;
+  document.querySelectorAll(".matrix-cell.cell-selected").forEach(c => c.classList.remove("cell-selected"));
+}
+
+function setupCellInspectionGestures() {
+  const sheet = document.getElementById("cellInspectionSheet");
+  const backdrop = document.getElementById("cellInspectionBackdrop");
+  const closeBtn = document.getElementById("closeInspectionSheetBtn");
+
+  if (closeBtn) closeBtn.onclick = closeCellInspection;
+  if (backdrop) {
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) closeCellInspection();
+    };
+  }
+
+  // Swipe-down touch gesture
+  if (sheet) {
+    let startY = 0;
+    let currentY = 0;
+    let isDragging = false;
+
+    sheet.addEventListener("touchstart", (e) => {
+      const body = sheet.querySelector(".ios-sheet-body");
+      if (body && body.scrollTop > 0) return;
+      startY = e.touches[0].clientY;
+      isDragging = true;
+      sheet.style.transition = "none";
+    }, { passive: true });
+
+    sheet.addEventListener("touchmove", (e) => {
+      if (!isDragging) return;
+      currentY = e.touches[0].clientY;
+      const deltaY = currentY - startY;
+      if (deltaY > 0) {
+        sheet.style.transform = `translateY(${deltaY}px)`;
+      }
+    }, { passive: true });
+
+    sheet.addEventListener("touchend", () => {
+      if (!isDragging) return;
+      isDragging = false;
+      sheet.style.transition = "transform 0.36s var(--ios-spring)";
+      const deltaY = currentY - startY;
+      if (deltaY > 70) {
+        closeCellInspection();
+      } else {
+        sheet.style.transform = "translateY(0)";
+      }
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && backdrop && backdrop.classList.contains("open")) {
+      closeCellInspection();
+    }
   });
 }
 
@@ -1408,18 +2579,20 @@ function setupStudioSettings() {
     await callAPI("save_preferences", state.preferences);
   };
 
-  // Database Backup & Restore
+  // Quick Export Sheet Button (Native iOS Action Sheet)
+  const exportSheetBtn = document.getElementById("openExportSheetBtn");
+  if (exportSheetBtn) {
+    exportSheetBtn.onclick = () => showExportActionSheet();
+  }
+
+  // Database Backup & Restore with native iOS Share Sheet support
   document.getElementById("backupJsonBtn").onclick = async () => {
+    triggerHaptic("light");
     const data = await callAPI("backup_database_json");
     if (data) {
+      const filename = `RentalLedger_Backup_${new Date().toISOString().split("T")[0]}.json`;
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `RentalLedger_Backup_${new Date().toISOString().split("T")[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Database backup snapshot exported successfully", "success");
+      await shareOrDownloadFile(blob, filename, "application/json", "Database JSON Backup");
     }
   };
 
@@ -1447,62 +2620,218 @@ function setupStudioSettings() {
     reader.readAsText(file);
   };
 
-  // CSV Export
+  
+// Publication-grade Pure Client-Side Landscape PDF Generator
+function generateLedgerPdfBlob({ buildingName, monthName, year, records, totals }) {
+  const W = 842;
+  const H = 595;
+
+  let stream = "";
+  const addText = (txt, x, y, font = "/F1", size = 10, r = 1, g = 1, b = 1) => {
+    const clean = String(txt || "")
+      .replace(/\\/g, "\\\\")
+      .replace(/\(/g, "\\(")
+      .replace(/\)/g, "\\)");
+    stream += `BT ${font} ${size} Tf ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} rg ${x.toFixed(1)} ${y.toFixed(1)} Td (${clean}) Tj ET\n`;
+  };
+
+  const addRect = (x, y, w, h, r, g, b) => {
+    stream += `${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} rg ${x.toFixed(1)} ${y.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)} re f\n`;
+  };
+
+  const addLine = (x1, y1, x2, y2, r = 0.8, g = 0.8, b = 0.8, width = 0.5) => {
+    stream += `${width} w ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} RG ${x1.toFixed(1)} ${y1.toFixed(1)} m ${x2.toFixed(1)} ${y2.toFixed(1)} l S\n`;
+  };
+
+  // Header Banner
+  addRect(0, 520, W, 75, 0.05, 0.08, 0.14);
+  addText(`RENTAL LEDGER · ${buildingName.toUpperCase()}`, 36, 560, "/F2", 18, 0.13, 0.83, 0.93);
+  addText(`Monthly Statement & Sub-Meter Billing Matrix  |  Period: ${monthName} ${year}  |  Generated: ${new Date().toLocaleDateString()}`, 36, 538, "/F1", 10, 0.7, 0.75, 0.82);
+
+  // Summary KPI Cards
+  const kpiY = 472;
+  const kpiW = 180;
+  const kpiH = 38;
+  const kpiGap = 16;
+  const startX = 36;
+
+  addRect(startX, kpiY, kpiW, kpiH, 0.08, 0.11, 0.18);
+  addText("CONTRACTED INFLOW", startX + 12, kpiY + 24, "/F1", 8, 0.6, 0.65, 0.75);
+  addText(fmtCurrency(totals.contracted), startX + 12, kpiY + 8, "/F2", 12, 1, 1, 1);
+
+  addRect(startX + (kpiW + kpiGap), kpiY, kpiW, kpiH, 0.08, 0.11, 0.18);
+  addText("CLEARED INFLOW", startX + (kpiW + kpiGap) + 12, kpiY + 24, "/F1", 8, 0.6, 0.65, 0.75);
+  addText(fmtCurrency(totals.cleared), startX + (kpiW + kpiGap) + 12, kpiY + 8, "/F2", 12, 0.22, 0.82, 0.45);
+
+  addRect(startX + (kpiW + kpiGap) * 2, kpiY, kpiW, kpiH, 0.08, 0.11, 0.18);
+  addText("PENDING ARREARS", startX + (kpiW + kpiGap) * 2 + 12, kpiY + 24, "/F1", 8, 0.6, 0.65, 0.75);
+  addText(fmtCurrency(totals.pending), startX + (kpiW + kpiGap) * 2 + 12, kpiY + 8, "/F2", 12, 0.96, 0.35, 0.45);
+
+  addRect(startX + (kpiW + kpiGap) * 3, kpiY, kpiW, kpiH, 0.08, 0.11, 0.18);
+  addText("ELECTRICITY UNITS", startX + (kpiW + kpiGap) * 3 + 12, kpiY + 24, "/F1", 8, 0.6, 0.65, 0.75);
+  addText(fmtUnits(totals.energy), startX + (kpiW + kpiGap) * 3 + 12, kpiY + 8, "/F2", 12, 0.98, 0.75, 0.18);
+
+  // Table Headers
+  const tableY = 445;
+  addRect(startX, tableY, W - startX * 2, 22, 0.12, 0.16, 0.24);
+
+  const cols = [
+    { title: "ROOM", x: startX + 6 },
+    { title: "TENANT", x: startX + 55 },
+    { title: "STATUS", x: startX + 160 },
+    { title: "RENT", x: startX + 220 },
+    { title: "PREV", x: startX + 285 },
+    { title: "CURR", x: startX + 335 },
+    { title: "UNITS", x: startX + 385 },
+    { title: "RATE", x: startX + 435 },
+    { title: "POWER", x: startX + 480 },
+    { title: "OTHER", x: startX + 540 },
+    { title: "TOTAL DUE", x: startX + 590 },
+    { title: "PAID", x: startX + 655 },
+    { title: "BALANCE", x: startX + 715 }
+  ];
+
+  cols.forEach(c => {
+    addText(c.title, c.x, tableY + 6, "/F2", 8, 0.85, 0.9, 0.95);
+  });
+
+  // Table Rows
+  let curY = tableY - 18;
+  const rowH = 17;
+
+  (records || []).slice(0, 22).forEach((rd, idx) => {
+    const rec = rd.record || {};
+    const room = rd.room || {};
+    if (idx % 2 === 1) {
+      addRect(startX, curY - 3, W - startX * 2, rowH, 0.05, 0.07, 0.11);
+    }
+
+    addText(room.roomNumber, cols[0].x, curY + 2, "/F2", 8, 1, 1, 1);
+    addText(room.tenantName ? room.tenantName.substring(0, 16) : "Vacant", cols[1].x, curY + 2, "/F1", 8, 0.8, 0.8, 0.8);
+    addText(room.status, cols[2].x, curY + 2, "/F1", 7.5, room.status === "Lended" ? 0.3 : 0.7, room.status === "Lended" ? 0.8 : 0.7, 0.5);
+    addText(fmtCurrency(rec.rent || 0), cols[3].x, curY + 2, "/F1", 8, 0.9, 0.9, 0.9);
+    addText(Number(rec.meterPrevious || 0).toFixed(1), cols[4].x, curY + 2, "/F1", 7.5, 0.7, 0.7, 0.7);
+    addText(Number(rec.meterCurrent || 0).toFixed(1), cols[5].x, curY + 2, "/F1", 7.5, 0.7, 0.7, 0.7);
+    addText(Number(rec.units || 0).toFixed(1), cols[6].x, curY + 2, "/F2", 8, 0.13, 0.83, 0.93);
+    addText(`₹${rec.meterRatePerUnit || 10}`, cols[7].x, curY + 2, "/F1", 7.5, 0.7, 0.7, 0.7);
+    addText(fmtCurrency(rec.electricity || 0), cols[8].x, curY + 2, "/F1", 8, 0.9, 0.9, 0.9);
+    addText(fmtCurrency(rec.otherCharges || 0), cols[9].x, curY + 2, "/F1", 8, 0.7, 0.7, 0.7);
+    addText(fmtCurrency(rec.totalDue || 0), cols[10].x, curY + 2, "/F2", 8, 1, 1, 1);
+    addText(fmtCurrency(rec.totalPaid || 0), cols[11].x, curY + 2, "/F1", 8, 0.22, 0.82, 0.45);
+
+    const bal = rec.balance || 0;
+    const balColor = bal > 0 ? [0.96, 0.35, 0.45] : [0.22, 0.82, 0.45];
+    addText(fmtCurrency(bal), cols[12].x, curY + 2, "/F2", 8, balColor[0], balColor[1], balColor[2]);
+
+    addLine(startX, curY - 3, W - startX, curY - 3, 0.15, 0.18, 0.25, 0.5);
+    curY -= rowH;
+  });
+
+  addText("Rental Ledger PWA · Hardware Accelerated Native Mobile & Desktop Financial Operating System", startX, 22, "/F1", 8, 0.4, 0.45, 0.52);
+
+  const streamLen = stream.length;
+  let pdf = "%PDF-1.4\n";
+  const offsets = [];
+
+  const addObj = (str) => {
+    offsets.push(pdf.length);
+    pdf += str;
+  };
+
+  addObj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+  addObj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+  addObj(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj\n`);
+  addObj("4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
+  addObj("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n");
+  addObj(`6 0 obj\n<< /Length ${streamLen} >>\nstream\n${stream}endstream\nendobj\n`);
+
+  const xrefOffset = pdf.length;
+  pdf += "xref\n0 7\n0000000000 65535 f \n";
+  for (let i = 0; i < 6; i++) {
+    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return new Blob([pdf], { type: "application/pdf" });
+}
+window.generateLedgerPdfBlob = generateLedgerPdfBlob;
+
+
+  // CSV Export with native Apple Share Sheet support
   document.getElementById("exportCsvBtn").onclick = async () => {
-    const csvContent = await callAPI("export_csv_data", state.selectedBuildingId, state.currentMonth, state.currentYear);
-    if (csvContent) {
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `RentalLedger_${state.currentYear}_${state.currentMonth}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Full matrix spreadsheet exported to CSV successfully", "success");
+    triggerHaptic("light");
+    const bldg = state.buildings.find(b => b.id === state.selectedBuildingId);
+    const buildingName = bldg ? bldg.name : "All Properties";
+    const shareTitle = 'Rental Ledger - ' + buildingName;
+
+    try {
+      let csvData;
+      let filename;
+      if (state.spreadsheetMode === "annual") {
+        csvData = await callAPI("export_annual_csv_data", state.selectedBuildingId, state.currentYear);
+        filename = `RentalLedger_Annual_${buildingName.replace(/\s+/g, '_')}_${state.currentYear}.csv`;
+      } else {
+        csvData = await callAPI("export_csv_data", state.selectedBuildingId, state.currentMonth, state.currentYear);
+        filename = `RentalLedger_${buildingName.replace(/\s+/g, '_')}_${state.currentYear}_${state.currentMonth}.csv`;
+      }
+
+      const csvContent = (csvData && csvData.csv) ? csvData.csv : (typeof csvData === "string" ? csvData : "");
+      if (csvContent) {
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        await shareOrDownloadFile(blob, filename, "text/csv;charset=utf-8;", shareTitle);
+      }
+    } catch (err) {
+      showToast("CSV export failed: " + (err.message || err), "error");
     }
   };
 
-  // PDF Export
+  // PDF Export with native Apple Share Sheet support
   const exportPdfBtn = document.getElementById("exportPdfBtn");
   if (exportPdfBtn) {
     exportPdfBtn.onclick = async () => {
       exportPdfBtn.disabled = true;
       exportPdfBtn.classList.add("loading");
-      showToast("Generating landscape PDF report...", "info");
+      triggerHaptic("medium");
+      showToast("Generating publication-grade landscape PDF...", "info");
       try {
-        const res = await callAPI("export_pdf_data", state.selectedBuildingId, state.currentMonth, state.currentYear);
+        const bldg = state.buildings.find(b => b.id === state.selectedBuildingId);
+        const buildingName = bldg ? bldg.name : "All Properties";
+        const shareTitle = 'Rental Ledger - ' + buildingName;
+        const monthName = MONTH_NAMES[state.currentMonth - 1];
+        const filename = `RentalLedger_${buildingName.replace(/\s+/g, '_')}_${state.currentYear}_${state.currentMonth}.pdf`;
+
+        // Check backend PDF export first
+        let res = await callAPI("export_pdf_data", state.selectedBuildingId, state.currentMonth, state.currentYear);
+        let pdfBlob = null;
+
         if (res && res.base64) {
-          // Trigger browser blob download
           const byteCharacters = atob(res.base64);
           const byteNumbers = new Array(byteCharacters.length);
           for (let i = 0; i < byteCharacters.length; i++) {
             byteNumbers[i] = byteCharacters.charCodeAt(i);
           }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: "application/pdf" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = res.filename || `RentalLedger_${state.currentYear}_${state.currentMonth}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          pdfBlob = new Blob([new Uint8Array(byteNumbers)], { type: "application/pdf" });
+        } else {
+          // Generate client-side PDF blob
+          const contracted = state.records.reduce((sum, r) => sum + (r.record.rent || 0), 0);
+          const cleared = state.records.reduce((sum, r) => sum + (r.record.totalPaid || 0), 0);
+          const pending = state.records.reduce((sum, r) => sum + (r.record.balance > 0 ? r.record.balance : 0), 0);
+          const energy = state.records.reduce((sum, r) => sum + (r.record.units || 0), 0);
 
-          if (res.path) {
-            showToast(`PDF exported & saved to Downloads: ${res.filename}`, "success");
-            // Prompt user if they want to view the PDF right now
-            if (confirm(`PDF statement exported successfully!\n\nSaved to:\n${res.path}\n\nWould you like to open it now?`)) {
-              await callAPI("open_pdf_file", res.path);
-            }
-          } else {
-            showToast("Spreadsheet PDF downloaded successfully", "success");
-          }
-        } else if (res && res.error) {
-          showToast(`PDF generation failed: ${res.error}`, "error");
+          pdfBlob = generateLedgerPdfBlob({
+            buildingName: buildingName,
+            monthName: monthName,
+            year: state.currentYear,
+            records: state.records,
+            totals: { contracted, cleared, pending, energy }
+          });
+        }
+
+        if (pdfBlob) {
+          await shareOrDownloadFile(pdfBlob, filename, "application/pdf", shareTitle);
         }
       } catch (err) {
-        showToast(`PDF generation error: ${err.message}`, "error");
+        showToast(`PDF generation error: ${err.message || err}`, "error");
       } finally {
         exportPdfBtn.disabled = false;
         exportPdfBtn.classList.remove("loading");
@@ -1526,14 +2855,9 @@ function setupUniversalImportExport() {
       try {
         const data = await callAPI("backup_database_json");
         if (data) {
+          const filename = `RentalLedger_Universal_Backup_${new Date().toISOString().split("T")[0]}.json`;
           const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `RentalLedger_Universal_Backup_${new Date().toISOString().split("T")[0]}.json`;
-          a.click();
-          URL.revokeObjectURL(url);
-          showToast("Universal JSON backup exported successfully! Compatible with Android, iOS, Windows & macOS.", "success");
+          await shareOrDownloadFile(blob, filename, "application/json", "Universal JSON Backup");
         }
       } finally {
         exportJsonBtn.disabled = false;
@@ -1559,16 +2883,15 @@ function setupUniversalImportExport() {
     exportCsvBtn.onclick = async () => {
       exportCsvBtn.disabled = true;
       try {
-        const csvContent = await callAPI("export_csv_data", state.selectedBuildingId, state.currentMonth, state.currentYear);
-        if (csvContent) {
-          const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `RentalLedger_Universal_${state.currentYear}_${state.currentMonth}.csv`;
-          a.click();
-          URL.revokeObjectURL(url);
-          showToast("Universal CSV exported successfully!", "success");
+        const bldg = state.buildings.find(b => b.id === state.selectedBuildingId);
+        const buildingName = bldg ? bldg.name : "All Properties";
+        const shareTitle = 'Rental Ledger - ' + buildingName;
+        const res = await callAPI("export_csv_data", state.selectedBuildingId, state.currentMonth, state.currentYear);
+        const csvStr = (res && res.csv) ? res.csv : (typeof res === "string" ? res : "");
+        if (csvStr) {
+          const filename = `RentalLedger_Universal_${buildingName.replace(/\s+/g, '_')}_${state.currentYear}_${state.currentMonth}.csv`;
+          const blob = new Blob([csvStr], { type: "text/csv;charset=utf-8;" });
+          await shareOrDownloadFile(blob, filename, "text/csv;charset=utf-8;", shareTitle);
         }
       } finally {
         exportCsvBtn.disabled = false;
@@ -1692,7 +3015,14 @@ function setupUniversalImportExport() {
         showToast("Please select a JSON backup file first.", "error");
         return;
       }
-      if (confirm("WARNING: Complete Snapshot Restore will replace your current database records with the snapshot.\n\nAre you sure you want to proceed?")) {
+      const confirmed = await showIosConfirm({
+        title: "Full Snapshot Restore",
+        message: "WARNING: Complete Snapshot Restore will replace your current database records with the snapshot.\n\nAre you sure you want to proceed?",
+        confirmText: "Restore Database",
+        isDestructive: true,
+        cancelText: "Cancel"
+      });
+      if (confirmed) {
         restoreBtn.disabled = true;
         try {
           const res = await callAPI("restore_database_json", state.stagedUnivJsonData);
@@ -1722,6 +3052,9 @@ function setupNavigation() {
       const targetView = item.dataset.view;
       if (!targetView) return;
 
+      triggerHaptic("light");
+      playIosHapticClick();
+
       document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
       item.classList.add("active");
 
@@ -1730,38 +3063,38 @@ function setupNavigation() {
       if (panel) panel.classList.add("active");
 
       state.currentView = targetView;
+      const scrollContainer = document.getElementById("viewContainer");
+      if (scrollContainer) scrollContainer.scrollTop = 0;
+      if (window.updateIosTitleState) window.updateIosTitleState();
+
       if (targetView === "dashboard") {
         setTimeout(renderCanvasChart, 100);
       }
     };
   });
 
-  // Filter Pills for Rooms
-  document.querySelectorAll("#roomFilterPills .filter-pill").forEach(p => {
-    p.onclick = () => {
-      document.querySelectorAll("#roomFilterPills .filter-pill").forEach(i => i.classList.remove("active"));
-      p.classList.add("active");
-      state.roomFilter = p.dataset.filter;
-      renderRooms();
-    };
+  // Segmented Control for Rooms (with sliding thumb & spring physics)
+  setupSegmentedControl("roomFilterPills", (btn) => {
+    state.roomFilter = btn.dataset.filter;
+    renderRooms();
   });
 
-  // Filter Pills for Ledger
-  document.querySelectorAll("#ledgerFilterPills .filter-pill").forEach(p => {
-    p.onclick = () => {
-      document.querySelectorAll("#ledgerFilterPills .filter-pill").forEach(i => i.classList.remove("active"));
-      p.classList.add("active");
-      state.ledgerFilter = p.dataset.filter;
-      renderLedger();
-    };
+  // Segmented Control for Ledger (with sliding thumb & spring physics)
+  setupSegmentedControl("ledgerFilterPills", (btn) => {
+    state.ledgerFilter = btn.dataset.filter;
+    renderLedger();
   });
 
   // View All Units button on dashboard
   document.getElementById("viewAllUnitsBtn").onclick = () => {
+    triggerHaptic("light");
+    playIosHapticClick();
     document.querySelector('.nav-item[data-view="rooms"]').click();
   };
 
   document.getElementById("refreshBtn").onclick = async () => {
+    triggerHaptic("light");
+    playIosHapticClick();
     await refreshData();
     showToast("Live ledger data refreshed", "info");
   };
@@ -1819,6 +3152,8 @@ function setupSearch() {
 
 function setupPeriodSwitcher() {
   document.getElementById("prevMonthBtn").onclick = async () => {
+    triggerHaptic("light");
+    playIosHapticClick();
     state.currentMonth--;
     if (state.currentMonth < 1) {
       state.currentMonth = 12;
@@ -1828,6 +3163,8 @@ function setupPeriodSwitcher() {
   };
 
   document.getElementById("nextMonthBtn").onclick = async () => {
+    triggerHaptic("light");
+    playIosHapticClick();
     state.currentMonth++;
     if (state.currentMonth > 12) {
       state.currentMonth = 1;
@@ -1837,6 +3174,8 @@ function setupPeriodSwitcher() {
   };
 
   document.getElementById("todayBtn").onclick = async () => {
+    triggerHaptic("light");
+    playIosHapticClick();
     state.currentMonth = new Date().getMonth() + 1;
     state.currentYear = new Date().getFullYear();
     await refreshData();
@@ -1909,7 +3248,244 @@ function recalcMeter() {
   }
 }
 
+// =============================================================================
+// Native Apple iOS Action Sheet Dialogs (iOS 17 / 18 HIG)
+// =============================================================================
+
+function showIosActionSheet({ title = "", message = "", actions = [], cancelText = "Cancel" }) {
+  return new Promise((resolve) => {
+    const existing = document.getElementById("iosActionSheetBackdrop");
+    if (existing) existing.remove();
+
+    const backdrop = document.createElement("div");
+    backdrop.id = "iosActionSheetBackdrop";
+    backdrop.className = "ios-actionsheet-backdrop";
+
+    const dialog = document.createElement("div");
+    dialog.className = "ios-actionsheet-dialog";
+
+    const group = document.createElement("div");
+    group.className = "ios-actionsheet-group";
+
+    if (title || message) {
+      const header = document.createElement("div");
+      header.className = "ios-actionsheet-header";
+      if (title) {
+        const titleEl = document.createElement("div");
+        titleEl.className = "ios-actionsheet-title";
+        titleEl.textContent = title;
+        header.appendChild(titleEl);
+      }
+      if (message) {
+        const msgEl = document.createElement("div");
+        msgEl.className = "ios-actionsheet-message";
+        msgEl.textContent = message;
+        header.appendChild(msgEl);
+      }
+      group.appendChild(header);
+    }
+
+    actions.forEach(action => {
+      const btn = document.createElement("button");
+      btn.className = "ios-actionsheet-action" + (action.style === "destructive" ? " destructive" : "");
+      btn.textContent = action.text;
+      btn.onclick = () => {
+        closeSheet(action.value !== undefined ? action.value : true);
+        if (typeof action.handler === "function") {
+          try { action.handler(); } catch (e) { console.error(e); }
+        }
+      };
+      group.appendChild(btn);
+    });
+
+    dialog.appendChild(group);
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "ios-actionsheet-cancel";
+    cancelBtn.textContent = cancelText;
+    cancelBtn.onclick = () => closeSheet(null);
+    dialog.appendChild(cancelBtn);
+
+    backdrop.appendChild(dialog);
+    document.body.appendChild(backdrop);
+
+    requestAnimationFrame(() => {
+      backdrop.classList.add("open");
+    });
+
+    let isClosed = false;
+    function closeSheet(result) {
+      if (isClosed) return;
+      isClosed = true;
+      document.removeEventListener("keydown", escListener);
+      backdrop.classList.remove("open");
+      setTimeout(() => {
+        if (backdrop.parentNode) backdrop.remove();
+        resolve(result);
+      }, 340);
+    }
+
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) closeSheet(null);
+    };
+
+    const escListener = (e) => {
+      if (e.key === "Escape") closeSheet(null);
+    };
+    document.addEventListener("keydown", escListener);
+  });
+}
+
+function showIosConfirm({ title = "", message = "", confirmText = "Confirm", isDestructive = false, cancelText = "Cancel" }) {
+  return showIosActionSheet({
+    title,
+    message,
+    actions: [
+      {
+        text: confirmText,
+        style: isDestructive ? "destructive" : "default",
+        value: true
+      }
+    ],
+    cancelText
+  }).then(res => Boolean(res));
+}
+
+function showExportActionSheet() {
+  return showIosActionSheet({
+    title: "Universal Export & Backup",
+    message: "Select a format to export your property ledger data:",
+    actions: [
+      {
+        text: "Export SQLite JSON Backup (.json)",
+        handler: () => {
+          const btn = document.getElementById("backupJsonBtn") || document.getElementById("exportUnivJsonBtn");
+          if (btn) btn.click();
+        }
+      },
+      {
+        text: "Export Universal Spreadsheet (.csv)",
+        handler: () => {
+          const btn = document.getElementById("exportUnivCsvBtn") || document.getElementById("exportCsvBtn");
+          if (btn) btn.click();
+        }
+      },
+      {
+        text: "Export Monthly PDF Statement (.pdf)",
+        handler: () => {
+          const btn = document.getElementById("exportPdfBtn");
+          if (btn) btn.click();
+          else showToast("Please open the Monthly Ledger view to export the PDF statement.", "info");
+        }
+      }
+    ],
+    cancelText: "Cancel"
+  });
+}
+window.showIosActionSheet = showIosActionSheet;
+window.showIosConfirm = showIosConfirm;
+window.showExportActionSheet = showExportActionSheet;
+
+// =============================================================================
+// Native iOS Bottom-Sheet Modals with Swipe-To-Dismiss Gestures
+// =============================================================================
+
+function setupModalDragToDismiss() {
+  document.querySelectorAll(".modal-backdrop").forEach(backdrop => {
+    const dialog = backdrop.querySelector(".modal-dialog");
+    if (!dialog) return;
+
+    let startY = 0;
+    let isDragging = false;
+    let startTime = 0;
+
+    const dragHandle = dialog.querySelector(".ios-drag-handle");
+    const modalHeader = dialog.querySelector(".modal-header");
+    const modalBody = dialog.querySelector(".modal-body");
+
+    function onTouchStart(e) {
+      if (!backdrop.classList.contains("open")) return;
+      const touch = e.touches[0];
+
+      if (modalBody && modalBody.contains(e.target)) {
+        if (modalBody.scrollTop > 0) return;
+      }
+
+      startY = touch.clientY;
+      startTime = Date.now();
+      isDragging = true;
+      dialog.style.transition = "none";
+    }
+
+    function onTouchMove(e) {
+      if (!isDragging) return;
+      const touch = e.touches[0];
+      const deltaY = touch.clientY - startY;
+
+      if (deltaY > 0) {
+        if (e.cancelable) e.preventDefault();
+        dialog.style.transform = `translateY(${deltaY}px)`;
+        const progress = Math.min(1, deltaY / 350);
+        backdrop.style.backgroundColor = `rgba(0, 0, 0, ${0.72 * (1 - progress * 0.7)})`;
+      } else {
+        dialog.style.transform = `translateY(${deltaY * 0.15}px)`;
+      }
+    }
+
+    function onTouchEnd(e) {
+      if (!isDragging) return;
+      isDragging = false;
+      const touch = e.changedTouches[0];
+      const deltaY = touch.clientY - startY;
+      const duration = Date.now() - startTime;
+      const velocity = deltaY / Math.max(1, duration);
+
+      if (deltaY > 80 || (deltaY > 30 && velocity > 0.35)) {
+        dialog.style.transition = "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
+        dialog.style.transform = "translateY(100%)";
+        backdrop.style.transition = "opacity 0.25s ease, background 0.25s ease";
+        backdrop.style.opacity = "0";
+
+        setTimeout(() => {
+          backdrop.classList.remove("open");
+          dialog.style.transform = "";
+          dialog.style.transition = "";
+          backdrop.style.opacity = "";
+          backdrop.style.transition = "";
+          backdrop.style.backgroundColor = "";
+        }, 280);
+      } else {
+        dialog.style.transition = "transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1)";
+        dialog.style.transform = "translateY(0)";
+        backdrop.style.transition = "background 0.3s ease";
+        backdrop.style.backgroundColor = "";
+
+        setTimeout(() => {
+          dialog.style.transform = "";
+          dialog.style.transition = "";
+        }, 330);
+      }
+    }
+
+    if (dragHandle) {
+      dragHandle.addEventListener("touchstart", onTouchStart, { passive: false });
+      dragHandle.addEventListener("touchmove", onTouchMove, { passive: false });
+      dragHandle.addEventListener("touchend", onTouchEnd, { passive: false });
+      dragHandle.addEventListener("touchcancel", onTouchEnd, { passive: false });
+    }
+
+    if (modalHeader) {
+      modalHeader.addEventListener("touchstart", onTouchStart, { passive: true });
+      modalHeader.addEventListener("touchmove", onTouchMove, { passive: false });
+      modalHeader.addEventListener("touchend", onTouchEnd, { passive: true });
+      modalHeader.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    }
+  });
+}
+
 function setupModals() {
+  setupModalDragToDismiss();
+
   // Top Add Unit button
   document.getElementById("topAddUnitBtn").onclick = () => openAddRoomModal();
   document.getElementById("addRoomBtn").onclick = () => openAddRoomModal();
@@ -2059,13 +3635,19 @@ function openEditRoomModal(roomId) {
 }
 
 async function handleDeleteRoom(roomId, roomNumber) {
-  if (confirm(`Are you sure you want to delete Room ${roomNumber}? All monthly statements and recorded payments for this room will be permanently removed.`)) {
-    const res = await callAPI("delete_room", Number(roomId));
-    if (res && res.error) return;
-    document.getElementById("roomModal").classList.remove("open");
-    showToast(`Room ${roomNumber} deleted successfully`, "info");
-    await refreshData();
-  }
+  const confirmed = await showIosConfirm({
+    title: `Delete Room ${roomNumber}`,
+    message: `Are you sure you want to delete Room ${roomNumber}? All monthly statements and recorded payments for this room will be permanently removed.`,
+    confirmText: "Delete Room",
+    isDestructive: true,
+    cancelText: "Cancel"
+  });
+  if (!confirmed) return;
+  const res = await callAPI("delete_room", Number(roomId));
+  if (res && res.error) return;
+  document.getElementById("roomModal").classList.remove("open");
+  showToast(`Room ${roomNumber} deleted successfully`, "info");
+  await refreshData();
 }
 
 async function handleSaveRoom() {
@@ -2332,7 +3914,14 @@ function renderModalPayments(recordId, payments) {
       e.stopPropagation();
       const pid = Number(btn.dataset.pid);
       const amt = Number(btn.dataset.amt);
-      if (confirm(`Are you sure you want to delete this payment of ${fmtCurrency(amt)}?`)) {
+      const confirmed = await showIosConfirm({
+        title: "Delete Payment",
+        message: `Are you sure you want to delete this payment of ${fmtCurrency(amt)}?`,
+        confirmText: "Delete Payment",
+        isDestructive: true,
+        cancelText: "Cancel"
+      });
+      if (confirmed) {
         const res = await callAPI("delete_payment", pid);
         if (res && res.error) return;
         showToast(`Payment of ${fmtCurrency(amt)} deleted`, "info");
@@ -2405,7 +3994,13 @@ async function handleSaveMeter() {
 
   // Warning guard: Current reading < Previous reading
   if (curr < prev) {
-    const proceed = confirm(`Meter reset or meter replacement detected:\nCurrent Reading (${curr} Units) is less than Previous Reading (${prev} Units).\n\nConfirm to proceed?`);
+    const proceed = await showIosConfirm({
+      title: "Meter Reset Warning",
+      message: `Current Reading (${curr} Units) is less than Previous Reading (${prev} Units).\n\nThis indicates a meter reset or replacement. Do you want to proceed?`,
+      confirmText: "Proceed with Reset",
+      isDestructive: false,
+      cancelText: "Cancel"
+    });
     if (!proceed) {
       return;
     }
@@ -2456,13 +4051,19 @@ async function handleSaveMeter() {
 }
 
 async function handleDeleteStatement(recordId, roomNumber) {
-  if (confirm(`Are you sure you want to delete the monthly statement for Room ${roomNumber}? Any recorded payments for this month will also be permanently deleted.`)) {
-    const res = await callAPI("delete_monthly_record", Number(recordId));
-    if (res && res.error) return;
-    document.getElementById("meterModal").classList.remove("open");
-    showToast(`Monthly statement for Room ${roomNumber} deleted successfully`, "info");
-    await refreshData();
-  }
+  const confirmed = await showIosConfirm({
+    title: "Delete Monthly Statement",
+    message: `Are you sure you want to delete the monthly statement for Room ${roomNumber}? Any recorded payments for this month will also be permanently deleted.`,
+    confirmText: "Delete Statement",
+    isDestructive: true,
+    cancelText: "Cancel"
+  });
+  if (!confirmed) return;
+  const res = await callAPI("delete_monthly_record", Number(recordId));
+  if (res && res.error) return;
+  document.getElementById("meterModal").classList.remove("open");
+  showToast(`Monthly statement for Room ${roomNumber} deleted successfully`, "info");
+  await refreshData();
 }
 
 function openUtilityModal() {
@@ -2518,13 +4119,20 @@ async function handleSaveUtility() {
 
 async function handleDeleteUtility() {
   const billId = document.getElementById("utilityBillId").value ? Number(document.getElementById("utilityBillId").value) : null;
-  if (billId && confirm("Are you sure you want to delete this Power Board invoice?")) {
-    const res = await callAPI("delete_utility_bill", billId);
-    if (res && res.error) return;
-    document.getElementById("utilityModal").classList.remove("open");
-    showToast("Power Board utility bill deleted", "info");
-    await refreshData();
-  }
+  if (!billId) return;
+  const confirmed = await showIosConfirm({
+    title: "Delete Electricity Bill",
+    message: "Are you sure you want to delete this Power Board utility invoice?",
+    confirmText: "Delete Invoice",
+    isDestructive: true,
+    cancelText: "Cancel"
+  });
+  if (!confirmed) return;
+  const res = await callAPI("delete_utility_bill", billId);
+  if (res && res.error) return;
+  document.getElementById("utilityModal").classList.remove("open");
+  showToast("Power Board utility bill deleted", "info");
+  await refreshData();
 }
 
 // -----------------------------------------------------------------------------
