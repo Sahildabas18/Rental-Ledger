@@ -1,0 +1,32 @@
+{
+  "name": "Rental Ledger & Sub-Meter OS",
+  "short_name": "Rental Ledger",
+  "description": "Multi-property rental ledger, sub-meter electricity manager & tenant accounts",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "id": "rental-ledger-pwa",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

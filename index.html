@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:;">
+  <title>Rental Ledger & Sub-Meter OS</title>
+
+  <!-- PWA & iOS Safari Standalone Headers -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Rental Ledger">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="shortcut icon" href="icons/favicon.png">
+  <meta name="theme-color" content="#050608">
+
+  <link rel="stylesheet" href="app.css">
+  <script>
+    window.onerror = function(msg, url, line, col, err) {
+      console.error("[RentalLedger UI Error]", msg, "at", line + ":" + col, err);
+      return false;
+    };
+    window.addEventListener("unhandledrejection", function(e) {
+      console.error("[RentalLedger Unhandled Promise Rejection]", e.reason);
+    });
+  </script>
+</head>
+<body class="theme-dark">
+
+  <!-- TOP ASYNC PROGRESS INDICATOR -->
+  <div id="topLoadingBar" class="top-loading-bar" aria-hidden="true"></div>
+
+  <!-- SELF-CONTAINED OFFLINE SVG VECTOR SPRITE DICTIONARY -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display: none;" aria-hidden="true">
+    <defs>
+      <symbol id="icon-domain" viewBox="0 0 24 24">
+        <path d="M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z"/>
+      </symbol>
+      <symbol id="icon-expand_more" viewBox="0 0 24 24">
+        <path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z"/>
+      </symbol>
+      <symbol id="icon-dashboard" viewBox="0 0 24 24">
+        <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>
+      </symbol>
+      <symbol id="icon-meeting_room" viewBox="0 0 24 24">
+        <path d="M19 19V4H15V3H5v16H3v2h12V6h2v15h4v-2h-2zm-6 0H7V5h6v14zm-3-8h2v2h-2z"/>
+      </symbol>
+      <symbol id="icon-receipt_long" viewBox="0 0 24 24">
+        <path d="M19.5 3.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2v14H3v3c0 1.66 1.34 3 3 3h12c1.66 0 3-1.34 3-3V2l-1.5 1.5zM19 19c0 .55-.45 1-1 1s-1-.45-1-1v-3H8V5h11v14zM9 7h6v2H9V7zm0 3h6v2H9v-2zm0 3h4v2H9v-2z"/>
+      </symbol>
+      <symbol id="icon-table_chart" viewBox="0 0 24 24">
+        <path d="M10 10.02h5V21h-5zM17 21h3c1.1 0 2-.9 2-2v-9h-5v11zm3-18H4c-1.1 0-2 .9-2 2v3h20V5c0-1.1-.9-2-2-2zM2 19c0 1.1.9 2 2 2h4v-11H2v9z"/>
+      </symbol>
+      <symbol id="icon-palette" viewBox="0 0 24 24">
+        <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 18.23C3.52 19.06 4.1 20.5 5.27 20.5H12c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+      </symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24">
+        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+      </symbol>
+      <symbol id="icon-chevron_left" viewBox="0 0 24 24">
+        <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+      </symbol>
+      <symbol id="icon-chevron_right" viewBox="0 0 24 24">
+        <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+      </symbol>
+      <symbol id="icon-add" viewBox="0 0 24 24">
+        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+      </symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24">
+        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+      </symbol>
+      <symbol id="icon-account_balance_wallet" viewBox="0 0 24 24">
+        <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+      </symbol>
+      <symbol id="icon-check_circle" viewBox="0 0 24 24">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </symbol>
+      <symbol id="icon-pending" viewBox="0 0 24 24">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-5 11c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm5 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm5 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>
+      </symbol>
+      <symbol id="icon-bolt" viewBox="0 0 24 24">
+        <path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.9 17.55 11 21 11 21z"/>
+      </symbol>
+      <symbol id="icon-info" viewBox="0 0 24 24">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+      </symbol>
+      <symbol id="icon-receipt" viewBox="0 0 24 24">
+        <path d="M18 17H6v-2h12v2zm0-4H6v-2h12v2zm0-4H6V7h12v2zM3 22l1.5-1.5L6 22l1.5-1.5L9 22l1.5-1.5L12 22l1.5-1.5L15 22l1.5-1.5L18 22l1.5-1.5L21 22V2l-1.5 1.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2 4.5 3.5 3 2v20z"/>
+      </symbol>
+      <symbol id="icon-edit" viewBox="0 0 24 24">
+        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+      </symbol>
+      <symbol id="icon-delete" viewBox="0 0 24 24">
+        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+      </symbol>
+      <symbol id="icon-payments" viewBox="0 0 24 24">
+        <path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-6v11c0 1.1-.9 2-2 2H4v-2h17V7h2z"/>
+      </symbol>
+      <symbol id="icon-close" viewBox="0 0 24 24">
+        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+      </symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24">
+        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+      </symbol>
+      <symbol id="icon-upload" viewBox="0 0 24 24">
+        <path d="M5 10h4v6h6v-6h4l-7-7-7 7zm14 8v2H5v-2h14z"/>
+      </symbol>
+      <symbol id="icon-file_download" viewBox="0 0 24 24">
+        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+      </symbol>
+      <symbol id="icon-person" viewBox="0 0 24 24">
+        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+      </symbol>
+      <symbol id="icon-warning" viewBox="0 0 24 24">
+        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+      </symbol>
+      <symbol id="icon-error" viewBox="0 0 24 24">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+      </symbol>
+      <symbol id="icon-picture_as_pdf" viewBox="0 0 24 24">
+        <path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z"/>
+      </symbol>
+      <symbol id="icon-sync_alt" viewBox="0 0 24 24">
+        <path d="M18 12l4-4-4-4v3H3v2h15v3zM6 12l-4 4 4 4v-3h15v-2H6v-3z"/>
+      </symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24">
+        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+      </symbol>
+      <symbol id="icon-sort" viewBox="0 0 24 24">
+        <path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/>
+      </symbol>
+      <symbol id="icon-smartphone" viewBox="0 0 24 24">
+        <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
+      </symbol>
+      <symbol id="icon-laptop" viewBox="0 0 24 24">
+        <path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <!-- TOAST NOTIFICATIONS CONTAINER -->
+  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <div id="app" class="app-layout">
+    
+    <!-- LEFT SIDEBAR / ACTIVITY RAIL -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="7" fill="var(--primary)" fill-opacity="0.2"/>
+            <path d="M12 4L4 10V20H9V14H15V20H20V10L12 4Z" fill="var(--primary)"/>
+            <circle cx="12" cy="10" r="2.5" fill="#0B0D13"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">Rental Ledger</span>
+          <span class="brand-badge">Sub-Meter OS</span>
+        </div>
+      </div>
+
+      <!-- Property Switcher Wrapper with Dropdown -->
+      <div class="property-selector-wrapper">
+        <div class="property-selector" id="propSelectorBtn">
+          <svg class="app-icon icon"><use href="#icon-domain"></use></svg>
+          <span class="prop-name" id="currentBuildingName">All Properties</span>
+          <svg class="app-icon chevron"><use href="#icon-expand_more"></use></svg>
+        </div>
+
+        <!-- Property Dropdown Popover -->
+        <div class="property-dropdown-menu" id="propDropdownMenu" style="display: none;">
+          <div class="prop-dropdown-header">
+            <span class="prop-dropdown-title">SELECT PROPERTY</span>
+            <button class="prop-add-mini-btn" id="openAddBuildingFromDropdownBtn" title="Add New Building">
+              <svg class="app-icon"><use href="#icon-add"></use></svg>
+              <span>Add</span>
+            </button>
+          </div>
+          <div class="prop-dropdown-list" id="propDropdownList">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Links -->
+      <nav class="nav-menu">
+        <div class="nav-section-label">MENU</div>
+        
+        <button class="nav-item active" data-view="dashboard">
+          <svg class="app-icon"><use href="#icon-dashboard"></use></svg>
+          <span class="label">Overview</span>
+        </button>
+
+        <button class="nav-item" data-view="rooms">
+          <svg class="app-icon"><use href="#icon-meeting_room"></use></svg>
+          <span class="label">Rooms</span>
+          <span class="badge" id="navRoomsCount">0</span>
+        </button>
+
+        <button class="nav-item" data-view="ledger">
+          <svg class="app-icon"><use href="#icon-receipt_long"></use></svg>
+          <span class="label">Monthly Ledger</span>
+        </button>
+
+        <button class="nav-item" data-view="spreadsheet">
+          <svg class="app-icon"><use href="#icon-table_chart"></use></svg>
+          <span class="label">Spreadsheet</span>
+        </button>
+
+        <div class="nav-section-label" style="margin-top: 16px;">PREFERENCES</div>
+
+        <button class="nav-item" data-view="import-export">
+          <svg class="app-icon"><use href="#icon-sync_alt"></use></svg>
+          <span class="label">Import / Export</span>
+        </button>
+
+        <button class="nav-item" data-view="settings">
+          <svg class="app-icon"><use href="#icon-palette"></use></svg>
+          <span class="label">Studio & Theme</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Footer Telemetry -->
+      <div class="sidebar-footer">
+        <div class="telemetry-card">
+          <div class="telemetry-header">
+            <span class="pulse-dot"></span>
+            <span class="telemetry-title">TELEMETRY</span>
+          </div>
+          <div class="telemetry-stat" id="telemetryRooms">-- Rooms Tracked</div>
+          <div class="telemetry-sub" id="telemetryInflow">₹0 Contracted</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN APP CANVAS -->
+    <main class="main-canvas">
+      
+      <!-- TOP ACTION BAR -->
+      <header class="topbar">
+        <div class="topbar-search">
+          <svg class="app-icon search-icon"><use href="#icon-search"></use></svg>
+          <input type="text" id="globalSearchInput" placeholder="Search tenant, room, or receipt... (Ctrl+F)" autocomplete="off">
+          <span class="search-badge">⌘F</span>
+        </div>
+
+        <div class="topbar-period">
+          <button class="period-btn" id="prevMonthBtn" title="Previous Month">
+            <svg class="app-icon"><use href="#icon-chevron_left"></use></svg>
+          </button>
+          <span class="period-label" id="currentPeriodLabel">March 2026</span>
+          <button class="period-btn" id="nextMonthBtn" title="Next Month">
+            <svg class="app-icon"><use href="#icon-chevron_right"></use></svg>
+          </button>
+          <button class="period-today-btn" id="todayBtn">Today</button>
+        </div>
+
+        <div class="topbar-actions">
+          <button class="action-btn-primary" id="topAddUnitBtn">
+            <svg class="app-icon"><use href="#icon-add"></use></svg>
+            <span>Add Room</span>
+          </button>
+          <button class="action-icon-btn" id="refreshBtn" title="Reload Live Data">
+            <svg class="app-icon"><use href="#icon-refresh"></use></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- VIEW CONTAINER -->
+      <div class="content-scrollable" id="viewContainer">
+        
+        <!-- 1. DASHBOARD / OVERVIEW VIEW -->
+        <section id="view-dashboard" class="view-panel active">
+          
+          <!-- Hero Revenue Banner -->
+          <div class="hero-card">
+            <div class="hero-left">
+              <span class="hero-label">PORTFOLIO CONTRACTED REVENUE</span>
+              <div class="hero-amount" id="heroRevenue">₹0.00</div>
+              <div class="hero-sub" id="heroSubtext">Telemetry updating across 0 rooms...</div>
+            </div>
+            <div class="hero-right">
+              <div class="occupancy-gauge">
+                <svg viewBox="0 0 36 36" class="circular-chart">
+                  <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                  <path class="circle" id="occupancyCircle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                  <text x="18" y="20.35" class="percentage" id="occupancyText">0%</text>
+                </svg>
+                <div class="occupancy-label">OCCUPANCY</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 KPI Metric Chips -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-top">
+                <span class="kpi-title">Contracted Inflow</span>
+                <svg class="app-icon kpi-icon"><use href="#icon-account_balance_wallet"></use></svg>
+              </div>
+              <div class="kpi-val" id="kpiContracted">₹0.00</div>
+              <div class="kpi-trend trend-positive" id="kpiContractedSub">Full base rate</div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-top">
+                <span class="kpi-title">Cleared Inflow</span>
+                <svg class="app-icon kpi-icon color-green"><use href="#icon-check_circle"></use></svg>
+              </div>
+              <div class="kpi-val" id="kpiCleared">₹0.00</div>
+              <div class="kpi-trend trend-positive" id="kpiClearedSub">0 Payments logged</div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-top">
+                <span class="kpi-title">Pending Arrears</span>
+                <svg class="app-icon kpi-icon color-rose"><use href="#icon-pending"></use></svg>
+              </div>
+              <div class="kpi-val" id="kpiPending">₹0.00</div>
+              <div class="kpi-trend trend-negative" id="kpiPendingSub">Outstanding balance</div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-top">
+                <span class="kpi-title">Electricity Consumed</span>
+                <svg class="app-icon kpi-icon color-amber"><use href="#icon-bolt"></use></svg>
+              </div>
+              <div class="kpi-val" id="kpiEnergy">0.0 Units</div>
+              <div class="kpi-trend" id="kpiEnergySub">₹0.00 sub-metered</div>
+            </div>
+          </div>
+
+          <!-- Charts & Reconciliation Row -->
+          <div class="dashboard-row">
+            <!-- Inflow Chart Card -->
+            <div class="card chart-card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Collection Inflow Timeline</h3>
+                  <p class="card-subtitle">Daily payment distribution for active billing cycle</p>
+                </div>
+                <span class="tag-pill" id="chartTotalTag">₹0 Cleared</span>
+              </div>
+              <div class="chart-container">
+                <canvas id="collectionChart" height="180"></canvas>
+              </div>
+            </div>
+
+            <!-- Electricity Board Delta Card -->
+            <div class="card grid-card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Power Board Grid Delta</h3>
+                  <p class="card-subtitle">Sub-meter recovery vs Main Board invoice</p>
+                </div>
+                <button class="pill-action-btn" id="openUtilityModalBtn">
+                  <svg class="app-icon"><use href="#icon-receipt"></use></svg>
+                  <span>Invoice</span>
+                </button>
+              </div>
+
+              <div class="reconcile-body" id="reconcileContainer">
+                <div class="reconcile-stat-row">
+                  <span class="rec-label">Tenant Sub-Meter Total:</span>
+                  <span class="rec-value" id="recTenantSum">₹0.00 (0.0 Units)</span>
+                </div>
+                <div class="reconcile-stat-row">
+                  <span class="rec-label">Power Board Invoice:</span>
+                  <span class="rec-value" id="recBoardSum">Not Logged</span>
+                </div>
+                
+                <div class="reconcile-badge" id="recBadge">
+                  <svg class="app-icon" id="recBadgeIcon"><use href="#icon-info"></use></svg>
+                  <span id="recBadgeText">No Main Utility Bill Recorded</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Rooms Overview -->
+          <div class="card" style="margin-top: 16px;">
+            <div class="card-header">
+              <h3 class="card-title">Active Room Roster</h3>
+              <button class="pill-action-btn" id="viewAllUnitsBtn">View All Rooms</button>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" id="dashboardUnitsTable">
+                <thead>
+                  <tr>
+                    <th>Room</th>
+                    <th>Status</th>
+                    <th>Tenant</th>
+                    <th>Agreed Rent</th>
+                    <th>Meter Rate</th>
+                    <th>Current Status</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardUnitsBody">
+                  <!-- Injected via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. ROOMS VIEW -->
+        <section id="view-rooms" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Rooms</h2>
+              <p class="view-subtitle">Manage tenant leases, base rates, and sub-meter calibrations</p>
+            </div>
+            <div class="view-actions">
+              <div class="filter-pills" id="roomFilterPills">
+                <button class="filter-pill active" data-filter="all">All</button>
+                <button class="filter-pill" data-filter="Lended">Occupied</button>
+                <button class="filter-pill" data-filter="Empty">Vacant</button>
+              </div>
+              <button class="pill-action-btn" id="openAddBuildingFromRoomsBtn">
+                <svg class="app-icon"><use href="#icon-domain"></use></svg>
+                <span>Add Building</span>
+              </button>
+              <button class="action-btn-primary" id="addRoomBtn">
+                <svg class="app-icon"><use href="#icon-add"></use></svg>
+                <span>Add Room</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="rooms-grid" id="roomsGrid">
+            <!-- Injected via JS -->
+          </div>
+        </section>
+
+        <!-- 3. MONTHLY LEDGER VIEW -->
+        <section id="view-ledger" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Monthly Statement Ledger</h2>
+              <p class="view-subtitle">Sub-meter calculation, additional charges, and payment tracking</p>
+            </div>
+            <div class="view-actions">
+              <div class="filter-pills" id="ledgerFilterPills">
+                <button class="filter-pill active" data-filter="all">All</button>
+                <button class="filter-pill" data-filter="unpaid">Unpaid</button>
+                <button class="filter-pill" data-filter="paid">Paid</button>
+              </div>
+              <button class="action-btn-primary" id="addLedgerEntryBtn">
+                <svg class="app-icon"><use href="#icon-add"></use></svg>
+                <span>Add Entry</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="ledger-cards-container" id="ledgerCardsContainer">
+            <!-- Injected via JS -->
+          </div>
+        </section>
+
+        <!-- 4. SPREADSHEET MATRIX VIEW -->
+        <section id="view-spreadsheet" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Full Matrix Spreadsheet</h2>
+              <p class="view-subtitle">Comprehensive tenant balance ledger, sub-meter billing, and inline editable matrix</p>
+            </div>
+            <div class="view-actions">
+              <div class="sort-select-wrapper">
+                <svg class="app-icon sort-icon"><use href="#icon-sort"></use></svg>
+                <select id="matrixSortSelect" class="sort-dropdown" title="Sort spreadsheet rows">
+                  <option value="room-asc">Sort: Room Number (Ascending: 01, 02...)</option>
+                  <option value="room-desc">Sort: Room Number (Descending)</option>
+                  <option value="building-asc">Sort: Building Name (A to Z)</option>
+                  <option value="tenant-asc">Sort: Tenant Name (A to Z)</option>
+                  <option value="units-desc">Sort: Units Consumed (High to Low)</option>
+                  <option value="due-desc">Sort: Total Due (High to Low)</option>
+                  <option value="balance-desc">Sort: Balance (High to Low)</option>
+                  <option value="status-unpaid">Sort: Unpaid First</option>
+                </select>
+              </div>
+              <button class="pill-action-btn" id="toggleSpreadsheetEditBtn" title="Toggle Inline Edit Mode">
+                <svg class="app-icon"><use href="#icon-edit"></use></svg>
+                <span id="spreadsheetEditModeLabel">Edit Mode</span>
+              </button>
+              <button class="pill-action-btn" id="exportCsvBtn" title="Export raw CSV data">
+                <svg class="app-icon"><use href="#icon-file_download"></use></svg>
+                <span>Export CSV</span>
+              </button>
+              <button class="action-btn-primary" id="exportPdfBtn" title="Download publication-grade landscape PDF report">
+                <svg class="app-icon"><use href="#icon-picture_as_pdf"></use></svg>
+                <span>Download PDF</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="card table-card">
+            <div class="table-responsive">
+              <table class="data-table matrix-table" id="matrixTable">
+                <thead>
+                  <tr>
+                    <th class="sortable-th" data-col="room" title="Click to sort by Room">Room <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="building" title="Click to sort by Building">Building <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="tenant" title="Click to sort by Tenant">Tenant <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="status" title="Click to sort by Status">Status <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="rent" title="Click to sort by Rent">Rent (₹) <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="startMeter" title="Click to sort by Start Meter">Start Meter <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="endMeter" title="Click to sort by End Meter">End Meter <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="units" title="Click to sort by Units Consumed">Units Consumed <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="rate" title="Click to sort by Rate">Rate (₹/Unit) <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="electric" title="Click to sort by Electricity">Electricity (₹) <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="other" title="Click to sort by Other">Other (₹) <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="prevBal" title="Click to sort by Prev Bal">Prev Bal (₹) <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="totalDue" title="Click to sort by Total Due">Total Due (₹) <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="paid" title="Click to sort by Paid">Paid (₹) <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="balance" title="Click to sort by Balance">Balance (₹) <span class="th-sort-arrow"></span></th>
+                    <th class="sortable-th" data-col="paymentStatus" title="Click to sort by Payment Status">Payment Status <span class="th-sort-arrow"></span></th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="matrixTableBody">
+                  <!-- Injected via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. STUDIO & SETTINGS VIEW -->
+        <section id="view-settings" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Customisation Studio</h2>
+              <p class="view-subtitle">Hardware-accelerated visual theme tokens and database maintenance</p>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            
+            <!-- Color Swatches Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Color Presets</h3>
+              </div>
+              
+              <div class="preset-section-subtitle">EXPRESSIVE GRADIENTS</div>
+              <div class="swatches-grid gradients-grid" id="gradientSwatchesGrid">
+                <!-- Injected via JS -->
+              </div>
+
+              <div class="preset-section-subtitle" style="margin-top: 14px;">SOLID ACCENTS</div>
+              <div class="swatches-grid" id="swatchesGrid">
+                <!-- Injected via JS -->
+              </div>
+
+              <div class="custom-hex-row">
+                <span class="hex-label">Custom Hex:</span>
+                <input type="text" id="customHexInput" placeholder="#22D3EE" maxlength="7" class="hex-input">
+                <button class="pill-action-btn" id="applyHexBtn">Apply</button>
+                <input type="color" id="nativeColorPicker" class="color-picker-input">
+              </div>
+            </div>
+
+            <!-- Live Preview Card -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Live Preview Card</h3>
+              </div>
+              <div class="live-preview-box">
+                <div class="preview-hero">
+                  <span class="preview-badge">Active Theme</span>
+                  <div class="preview-amount">₹42,850.00</div>
+                  <div class="preview-sub">95% Occupancy · 12 Active Rooms</div>
+                </div>
+                <div class="preview-controls">
+                  <button class="action-btn-primary">Primary Action</button>
+                  <button class="pill-action-btn">Secondary</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Accessibility & Gradients -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Display & Motion Settings</h3>
+              </div>
+              <div class="setting-toggle-row">
+                <div>
+                  <div class="setting-name">Reduced Motion Mode</div>
+                  <div class="setting-desc">Disable spring transitions for motion sensitivity</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="reducedMotionToggle">
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              <div class="setting-toggle-row" style="margin-top: 14px;">
+                <div>
+                  <div class="setting-name">Theme Palette</div>
+                  <div class="setting-desc">Choose between Obsidian Dark and High-Contrast Light</div>
+                </div>
+                <div class="theme-buttons">
+                  <button class="theme-btn active" id="darkThemeBtn">Dark</button>
+                  <button class="theme-btn" id="lightThemeBtn">Light</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Database Backup & Restore -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Database Portability</h3>
+              </div>
+              <p class="card-subtitle" style="margin-bottom: 16px;">
+                Export or restore your full SQLite ledger snapshot to JSON format.
+              </p>
+              <div class="db-actions-row">
+                <button class="pill-action-btn" id="backupJsonBtn">
+                  <svg class="app-icon"><use href="#icon-download"></use></svg>
+                  <span>Export JSON Backup</span>
+                </button>
+                <button class="pill-action-btn" id="restoreJsonBtn">
+                  <svg class="app-icon"><use href="#icon-upload"></use></svg>
+                  <span>Restore JSON Backup</span>
+                </button>
+                <input type="file" id="restoreFileInput" style="display:none;" accept=".json">
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 6. UNIVERSAL IMPORT / EXPORT VIEW -->
+        <section id="view-import-export" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Universal Import & Export Hub</h2>
+              <p class="view-subtitle">Seamless cross-platform data exchange compatible with Android phones, iPhones (iOS), Windows, and macOS</p>
+            </div>
+          </div>
+
+          <!-- Cross-Platform Compatibility Badge Bar -->
+          <div class="compatibility-card">
+            <div class="compatibility-title">CROSS-PLATFORM ECOSYSTEM SYNC</div>
+            <div class="platform-chips-row">
+              <span class="platform-chip active"><svg class="app-icon"><use href="#icon-smartphone"></use></svg> Android Phones & Tablets</span>
+              <span class="platform-chip active"><svg class="app-icon"><use href="#icon-smartphone"></use></svg> Apple iPhone & iPad (iOS)</span>
+              <span class="platform-chip active"><svg class="app-icon"><use href="#icon-laptop"></use></svg> Windows 10 / 11 Desktop</span>
+              <span class="platform-chip active"><svg class="app-icon"><use href="#icon-laptop"></use></svg> Apple macOS (Silicon & Intel)</span>
+            </div>
+            <p class="compatibility-desc">
+              Standardized JSON Schema v5.0 and RFC 4180 CSV specifications ensure zero data loss across mobile and desktop platforms. All buildings, room numbers, security deposits, meter units, and payment installments transfer seamlessly.
+            </p>
+          </div>
+
+          <div class="settings-grid" style="margin-top: 18px;">
+            <!-- Card 1: Universal Export -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Universal Export</h3>
+              </div>
+              <p class="card-subtitle" style="margin-bottom: 16px;">
+                Download portable files or copy data to paste into phone notes or email.
+              </p>
+
+              <div class="export-options-list">
+                <div class="export-option-box">
+                  <div class="export-option-info">
+                    <div class="export-option-name">Universal JSON Snapshot (.json)</div>
+                    <div class="export-option-desc">Complete database: Buildings, Rooms, Lended Dates, Deposits, Meter Readouts, and Multi-Payment Installments.</div>
+                  </div>
+                  <div class="export-option-actions">
+                    <button class="action-btn-primary" id="exportUnivJsonBtn">
+                      <svg class="app-icon"><use href="#icon-download"></use></svg>
+                      <span>Download JSON</span>
+                    </button>
+                    <button class="pill-action-btn" id="copyUnivJsonBtn" title="Copy raw JSON to clipboard">
+                      <span>Copy to Clipboard</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="export-option-box" style="margin-top: 14px;">
+                  <div class="export-option-info">
+                    <div class="export-option-name">Universal Spreadsheet CSV (.csv)</div>
+                    <div class="export-option-desc">Standard spreadsheet format readable by Google Sheets on Android/iPhone, MS Excel, and Apple Numbers.</div>
+                  </div>
+                  <div class="export-option-actions">
+                    <button class="pill-action-btn" id="exportUnivCsvBtn">
+                      <svg class="app-icon"><use href="#icon-file_download"></use></svg>
+                      <span>Download CSV</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 2: Universal Import & Merge -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">Universal Import & Merge</h3>
+              </div>
+              <p class="card-subtitle" style="margin-bottom: 16px;">
+                Import data from an Android phone, iPhone, or another laptop with automated validation and safety checks.
+              </p>
+
+              <!-- Drag & Drop / Select Box -->
+              <div class="file-dropzone" id="univDropzone">
+                <svg class="app-icon drop-icon"><use href="#icon-upload"></use></svg>
+                <div class="drop-text-primary">Drag & drop your JSON backup file here</div>
+                <div class="drop-text-sub">or click below to choose a file from your device</div>
+                <button class="pill-action-btn" id="browseUnivFileBtn" style="margin-top: 12px;">Browse Backup File</button>
+                <input type="file" id="univFileInput" accept=".json" style="display: none;">
+              </div>
+
+              <!-- Inspection Box (Appears after file selected) -->
+              <div id="univInspectionCard" class="inspection-card" style="display: none; margin-top: 16px;">
+                <div class="inspection-card-header">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg class="app-icon color-green"><use href="#icon-check_circle"></use></svg>
+                    <strong id="inspectFileNameText">backup.json</strong>
+                  </div>
+                  <span class="status-chip paid" id="inspectBadgeText">Compatible v5</span>
+                </div>
+                <div class="inspection-counts-grid" id="inspectCountsGrid">
+                  <!-- Populated via JS -->
+                </div>
+                <div class="inspection-actions-row">
+                  <button class="action-btn-primary" id="performSafeMergeBtn" style="flex: 1;">
+                    <svg class="app-icon"><use href="#icon-sync_alt"></use></svg>
+                    <span>Safe Merge (Recommended)</span>
+                  </button>
+                  <button class="pill-action-btn btn-danger" id="performFullRestoreBtn">
+                    <span>Full Restore Snapshot</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- MODALS -->
+
+  <!-- Modal 1: Add/Edit Room -->
+  <div class="modal-backdrop" id="roomModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" id="roomModalTitle">Add New Room</h3>
+        <button class="modal-close-btn" id="closeRoomModalBtn">
+          <svg class="app-icon"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="modalRoomId">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Property / Building *</label>
+          <select id="modalRoomBuilding">
+            <!-- Populated via JS -->
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Room Number *</label>
+            <input type="text" id="modalRoomNumber" placeholder="e.g. 101, A-1" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="modalRoomStatus">
+              <option value="Lended">Occupied (Lended)</option>
+              <option value="Empty">Vacant (Empty)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Agreed Rent (₹) *</label>
+            <input type="number" id="modalAgreedRent" placeholder="5000" min="0" step="100">
+          </div>
+          <div class="form-group">
+            <label>Default Electricity Rate (₹/Unit)</label>
+            <input type="number" id="modalMeterRate" placeholder="10.0" min="0" step="0.5">
+          </div>
+        </div>
+
+        <div class="tenant-fields-section" id="modalTenantSection">
+          <div class="section-title">Tenant & Lease Details</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Tenant Name</label>
+              <input type="text" id="modalTenantName" placeholder="Full name">
+            </div>
+            <div class="form-group">
+              <label>Phone Number</label>
+              <input type="tel" id="modalTenantPhone" placeholder="Mobile / WhatsApp">
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-top: 10px;">
+            <div class="form-group" style="flex: 1;">
+              <label>Date Room Lended</label>
+              <input type="date" id="modalRoomLendedDate">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label>Monthly Rent Due Day (1-31)</label>
+              <input type="number" id="modalRoomMoveInDay" min="1" max="31" value="1" placeholder="1">
+            </div>
+          </div>
+
+          <!-- 1 Month Security Deposit Section -->
+          <div class="security-deposit-box" style="margin-top: 12px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius-md);">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <svg class="app-icon" style="color: var(--primary);"><use href="#icon-shield"></use></svg>
+                <div>
+                  <div style="font-weight: 600; font-size: 13px;">1 Month Security Deposit</div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Has tenant paid 1 month refundable security deposit?</div>
+                </div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="modalRoomDepositCheckbox">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div id="modalDepositAmountRow" style="margin-top: 10px; display: none;">
+              <label style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: block;">Security Deposit Amount (₹)</label>
+              <input type="number" id="modalRoomDepositAmount" placeholder="e.g. 5000" min="0" step="100">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px;">
+            <label>Notes / Remarks</label>
+            <input type="text" id="modalTenantNotes" placeholder="Agreement remarks, ID verification...">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="pill-action-btn btn-danger" id="deleteRoomBtn" style="display: none; margin-right: auto;">Delete Room</button>
+        <button class="pill-action-btn" id="cancelRoomModalBtn">Cancel</button>
+        <button class="action-btn-primary" id="saveRoomBtn">Save Room</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Record Payment -->
+  <div class="modal-backdrop" id="paymentModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Record Rent Payment</h3>
+        <button class="modal-close-btn" id="closePaymentModalBtn">
+          <svg class="app-icon"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="payRecordId">
+        <div class="payment-summary-box">
+          <div class="pay-unit-title" id="payModalUnit">Room 101 - Tenant Name</div>
+          <div class="pay-balance-due" id="payModalDue">Outstanding: ₹0.00</div>
+        </div>
+
+        <div class="form-group">
+          <label>Payment Amount (₹) *</label>
+          <input type="number" id="payAmountInput" placeholder="0.00" min="0.01" step="100" class="input-large">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label>Payment Date</label>
+            <input type="date" id="payDateInput">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label>Payment Method</label>
+            <select id="payMethodSelect">
+              <option value="Cash">Cash</option>
+              <option value="UPI">UPI (GPay / PhonePe / Paytm)</option>
+              <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+              <option value="Cheque">Cheque</option>
+              <option value="Credit Adjust">Extra Credit Adjust</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Payment Allocation / Purpose</label>
+          <select id="payPurposeSelect">
+            <option value="Rent">Current Month Bill / Partial Installment</option>
+            <option value="Advance-1">1 Month Advance Rent</option>
+            <option value="Advance-2">2 Months Advance Rent</option>
+            <option value="Deposit">Security Deposit Guarantee</option>
+            <option value="Arrears">Previous Balance / Arrears</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Reference / Transaction Note</label>
+          <input type="text" id="payNoteInput" placeholder="UPI Ref, 2nd installment, 1 month advance note...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="pill-action-btn" id="cancelPayModalBtn">Cancel</button>
+        <button class="action-btn-primary" id="submitPaymentBtn">Confirm Payment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Update Sub-Meter Reading & Monthly Statement -->
+  <div class="modal-backdrop" id="meterModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" id="meterModalTitle">Edit Monthly Statement</h3>
+        <button class="modal-close-btn" id="closeMeterModalBtn">
+          <svg class="app-icon"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="meterRecordId">
+        <input type="hidden" id="meterRoomId">
+        
+        <div class="form-group" id="meterRoomSelectGroup" style="display: none; margin-bottom: 14px;">
+          <label>Select Room *</label>
+          <select id="meterRoomSelect">
+            <!-- Populated via JS -->
+          </select>
+        </div>
+
+        <div class="payment-summary-box" id="meterSummaryBox">
+          <div class="pay-unit-title" id="meterModalUnit">Room 101</div>
+          <div class="pay-balance-due" id="meterModalSummary">Rate: ₹10.00 / Unit</div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Monthly Rent (₹) *</label>
+            <input type="number" id="meterRentInput" step="100" min="0" placeholder="e.g. 5000">
+          </div>
+          <div class="form-group">
+            <label>Electricity Rate (₹/Unit) *</label>
+            <input type="number" id="meterRateInput" step="0.5" min="0" placeholder="10.0">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Previous Reading (Units)</label>
+            <input type="number" id="meterPrevInput" step="0.1" min="0">
+          </div>
+          <div class="form-group">
+            <label>Current Reading (Units) *</label>
+            <input type="number" id="meterCurrInput" step="0.1" min="0">
+          </div>
+        </div>
+
+        <div class="meter-calc-display">
+          <span>Units: <strong id="meterCalcUnits">0.0</strong></span>
+          <span>Power Bill: <strong id="meterCalcBill">₹0.00</strong></span>
+          <span>Total Statement: <strong id="meterCalcTotal">₹0.00</strong></span>
+        </div>
+
+        <!-- Meter reset/replacement guard warning banner -->
+        <div id="meterWarningAlert" class="meter-warning-alert" style="display: none;">
+          <svg class="app-icon" style="color: var(--warning); width: 18px; height: 18px;"><use href="#icon-warning"></use></svg>
+          <span>Current reading is less than previous reading. This indicates a meter reset or replacement.</span>
+        </div>
+
+        <div class="form-row" style="margin-top: 14px;">
+          <div class="form-group">
+            <label>Other Charges (₹)</label>
+            <input type="number" id="meterOtherChargesInput" step="50" min="0" value="0">
+          </div>
+          <div class="form-group">
+            <label>Other Charges Description</label>
+            <input type="text" id="meterOtherNotesInput" placeholder="Maintenance, water, parking...">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Statement Notes / Remarks</label>
+          <input type="text" id="meterStatementNotesInput" placeholder="Optional notes for this monthly statement...">
+        </div>
+
+        <!-- Recorded Payments for this statement -->
+        <div id="meterPaymentsContainer" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px;">Recorded Payments</span>
+            <span style="font-size: 11px; color: var(--text-muted);" id="meterPaymentsTotal">₹0.00 Paid</span>
+          </div>
+          <div id="meterPaymentsList">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="pill-action-btn btn-danger" id="deleteStatementBtn" style="display: none; margin-right: auto;">Delete Entry</button>
+        <button class="pill-action-btn" id="cancelMeterModalBtn">Cancel</button>
+        <button class="action-btn-primary" id="saveMeterBtn">Save Entry</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: Power Board Invoice -->
+  <div class="modal-backdrop" id="utilityModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Electricity Board Utility Bill</h3>
+        <button class="modal-close-btn" id="closeUtilityModalBtn">
+          <svg class="app-icon"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="utilityBillId">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Total Bill Amount (₹) *</label>
+            <input type="number" id="utilAmountInput" placeholder="0.00" min="0" step="50">
+          </div>
+          <div class="form-group">
+            <label>Total Electricity Units Billed (Units) *</label>
+            <input type="number" id="utilUnitsInput" placeholder="0.0" min="0" step="1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Bill Invoice Number</label>
+            <input type="text" id="utilInvoiceInput" placeholder="EB-2026-03">
+          </div>
+          <div class="form-group">
+            <label>Bill Date</label>
+            <input type="date" id="utilDateInput">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="pill-action-btn btn-danger" id="deleteUtilityBtn" style="display:none; margin-right:auto;">Delete Invoice</button>
+        <button class="pill-action-btn" id="cancelUtilityModalBtn">Cancel</button>
+        <button class="action-btn-primary" id="saveUtilityBtn">Save Invoice</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 5: Add New Building -->
+  <div class="modal-backdrop" id="buildingModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" id="buildingModalTitle">Add New Property / Building</h3>
+        <button class="modal-close-btn" id="closeBuildingModalBtn">
+          <svg class="app-icon"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="modalBuildingId">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Property / Building Name *</label>
+          <input type="text" id="modalBuildingName" placeholder="e.g. Green Heights, Block B, Sunshine Residency" required autocomplete="off">
+        </div>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Address / Location</label>
+          <input type="text" id="modalBuildingAddress" placeholder="e.g. 12 Park Avenue, Civil Lines" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Property Badge Color</label>
+          <div class="building-color-options" id="buildingColorOptions">
+            <!-- Populated via JS -->
+          </div>
+          <input type="hidden" id="modalBuildingColor" value="#22D3EE">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="pill-action-btn btn-danger" id="deleteBuildingBtn" style="display: none; margin-right: auto;">Delete Property</button>
+        <button class="pill-action-btn" id="cancelBuildingModalBtn">Cancel</button>
+        <button class="action-btn-primary" id="saveBuildingBtn">Save Property</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client-Side Offline Database Engine (Parity with SQLite Backend) -->
+  <script src="pwa-storage.js"></script>
+  <script src="app.js"></script>
+  
+  <!-- Offline Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('[PWA] Service Worker registered:', reg.scope))
+          .catch(err => console.log('[PWA] Service Worker registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
