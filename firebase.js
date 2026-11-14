@@ -10,7 +10,7 @@
 // =============================================================================
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyB-IHWUEy_Z3ntPBqDyj7Q03qMIthI7cio",
+  apiKey: "AIzaSyB-IHWUEy_Z3ntPBqDyj7QO3qMIthI7cio",
   authDomain: "rental-ledger-227b4.firebaseapp.com",
   projectId: "rental-ledger-227b4",
   storageBucket: "rental-ledger-227b4.firebasestorage.app",

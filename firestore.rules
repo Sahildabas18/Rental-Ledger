@@ -16,6 +16,8 @@ rules_version = '2';
 //
 // Root and Subcollections:
 // - /users/{uid}: User profile and application preferences
+// - /users/{uid}/data/portfolio: Properties and room configurations
+// - /users/{uid}/data/statements: Monthly records, ledger payments, and utility bills
 // - /users/{uid}/preferences/{prefId}: Theme and UI settings
 // - /users/{uid}/buildings/{buildingId}: Property metadata (name, address, colorHex)
 // - /users/{uid}/rooms/{roomId}: Room configurations, rents, tenants, meter rates
@@ -23,7 +25,7 @@ rules_version = '2';
 // - /users/{uid}/payments/{paymentId}: Tenant payment receipts and ledger entries
 // - /users/{uid}/utility_bills/{billId}: Utility electricity bills and rates
 //
-// Default Policy: Deny all reads and writes by default at the root level.
+// Default Policy: Deny all reads and writes by default across the database.
 // Access Policy: Signed-in users can only read and write their own documents.
 //
 // ===============================================================
@@ -42,12 +44,12 @@ service cloud.firestore {
 
     // Deny all reads and writes by default across the database
     match /{document=**} {
-      allow read, write: false;
+      allow read, write: if false;
     }
 
-    // Restrict access: Signed-in users can read and write only their own documents
+    // Restrict access: Signed-in users can read and write only their own documents and subcollections
     match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner(uid);
     }
   }
 }
