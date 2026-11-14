@@ -10,12 +10,13 @@
 // =============================================================================
 
 export const firebaseConfig = {
-  apiKey: "PASTE_YOUR_API_KEY_HERE",
-  authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "PASTE_YOUR_PROJECT_ID",
-  storageBucket: "PASTE_YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "PASTE_YOUR_MESSAGING_SENDER_ID",
-  appId: "PASTE_YOUR_APP_ID"
+  apiKey: "AIzaSyB-IHWUEy_Z3ntPBqDyj7Q03qMIthI7cio",
+  authDomain: "rental-ledger-227b4.firebaseapp.com",
+  projectId: "rental-ledger-227b4",
+  storageBucket: "rental-ledger-227b4.firebasestorage.app",
+  messagingSenderId: "671817465949",
+  appId: "1:671817465949:web:6280bd2dd1cd20fe370db4",
+  measurementId: "G-9Q174JZ4QE"
 };
 
 // =============================================================================
@@ -137,6 +138,38 @@ export function fromSyntheticEmail(email) {
 }
 
 // =============================================================================
+// =============================================================================
+// Local Offline Auth Engine (Automatic Fallback when Firebase is not yet configured)
+// =============================================================================
+
+const LOCAL_USERS_KEY = "rental_ledger_local_auth_users";
+const LOCAL_ACTIVE_USER_KEY = "rental_ledger_local_active_user";
+let localAuthCallback = null;
+
+function getLocalUsers() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || "{}");
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveLocalUsers(users) {
+  try {
+    localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
+  } catch (e) {}
+}
+
+function getLocalActiveUser() {
+  try {
+    const raw = localStorage.getItem(LOCAL_ACTIVE_USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// =============================================================================
 // Friendly Error Message Translation
 // =============================================================================
 
@@ -175,8 +208,6 @@ export function getFriendlyErrorMessage(err) {
  * Creates a new user with username and password.
  */
 export async function signUpWithUsername(rawUsername, password) {
-  if (!auth) throw new Error("Firebase is not configured. Please paste your config in firebase.js.");
-  
   const userCheck = validateUsername(rawUsername);
   if (!userCheck.valid) throw new Error(userCheck.message);
 
@@ -184,25 +215,62 @@ export async function signUpWithUsername(rawUsername, password) {
   if (!passCheck.valid) throw new Error(passCheck.message);
 
   const email = toSyntheticEmail(userCheck.username);
-  
-  try {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    return {
-      user: cred.user,
-      username: userCheck.username,
-      uid: cred.user.uid
-    };
-  } catch (err) {
-    throw new Error(getFriendlyErrorMessage(err));
+
+  // If Firebase is fully configured, use Firebase Auth
+  if (auth && isFirebaseConfigured()) {
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      return {
+        user: cred.user,
+        username: userCheck.username,
+        uid: cred.user.uid,
+        isLocal: false
+      };
+    } catch (err) {
+      throw new Error(getFriendlyErrorMessage(err));
+    }
   }
+
+  // Fallback to Local Offline Auth Engine
+  console.info("[Auth] Using Local Offline Auth Engine for sign-up.");
+  const users = getLocalUsers();
+  if (users[userCheck.username]) {
+    throw new Error("This username is already taken. Please choose another username.");
+  }
+
+  const localUser = {
+    username: userCheck.username,
+    password: password,
+    uid: "local_" + userCheck.username,
+    email: email,
+    createdAt: new Date().toISOString()
+  };
+
+  users[userCheck.username] = localUser;
+  saveLocalUsers(users);
+  localStorage.setItem(LOCAL_ACTIVE_USER_KEY, JSON.stringify(localUser));
+
+  if (localAuthCallback) {
+    localAuthCallback({
+      uid: localUser.uid,
+      username: localUser.username,
+      email: localUser.email,
+      isLocal: true
+    });
+  }
+
+  return {
+    user: localUser,
+    username: localUser.username,
+    uid: localUser.uid,
+    isLocal: true
+  };
 }
 
 /**
  * Signs in an existing user with username and password.
  */
 export async function logInWithUsername(rawUsername, password) {
-  if (!auth) throw new Error("Firebase is not configured. Please paste your config in firebase.js.");
-  
   const userCheck = validateUsername(rawUsername);
   if (!userCheck.valid) throw new Error(userCheck.message);
 
@@ -210,27 +278,63 @@ export async function logInWithUsername(rawUsername, password) {
 
   const email = toSyntheticEmail(userCheck.username);
 
-  try {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    return {
-      user: cred.user,
-      username: userCheck.username,
-      uid: cred.user.uid
-    };
-  } catch (err) {
-    throw new Error(getFriendlyErrorMessage(err));
+  // If Firebase is fully configured, use Firebase Auth
+  if (auth && isFirebaseConfigured()) {
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      return {
+        user: cred.user,
+        username: userCheck.username,
+        uid: cred.user.uid,
+        isLocal: false
+      };
+    } catch (err) {
+      throw new Error(getFriendlyErrorMessage(err));
+    }
   }
+
+  // Fallback to Local Offline Auth Engine
+  console.info("[Auth] Using Local Offline Auth Engine for sign-in.");
+  const users = getLocalUsers();
+  const existing = users[userCheck.username];
+
+  if (!existing || existing.password !== password) {
+    throw new Error("Incorrect username or password. Please try again.");
+  }
+
+  localStorage.setItem(LOCAL_ACTIVE_USER_KEY, JSON.stringify(existing));
+
+  if (localAuthCallback) {
+    localAuthCallback({
+      uid: existing.uid,
+      username: existing.username,
+      email: existing.email,
+      isLocal: true
+    });
+  }
+
+  return {
+    user: existing,
+    username: existing.username,
+    uid: existing.uid,
+    isLocal: true
+  };
 }
 
 /**
  * Signs out the current user.
  */
 export async function logOutUser() {
-  if (!auth) return;
-  try {
-    await signOut(auth);
-  } catch (err) {
-    console.error("[Firebase] Sign-out error:", err);
+  if (auth && isFirebaseConfigured()) {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("[Firebase] Sign-out error:", err);
+    }
+  }
+  localStorage.removeItem(LOCAL_ACTIVE_USER_KEY);
+  if (localAuthCallback) {
+    localAuthCallback(null);
   }
 }
 
@@ -238,40 +342,66 @@ export async function logOutUser() {
  * Changes password with required re-authentication.
  */
 export async function changeUserPassword(currentPassword, newPassword) {
-  if (!auth || !auth.currentUser) throw new Error("No active user session.");
-
   const passCheck = validatePassword(newPassword);
   if (!passCheck.valid) throw new Error(passCheck.message);
 
-  const user = auth.currentUser;
-  const credential = EmailAuthProvider.credential(user.email, currentPassword);
-
-  try {
-    // Re-authenticate first
-    await reauthenticateWithCredential(user, credential);
-    // Update password
-    await updatePassword(user, newPassword);
-    return { success: true };
-  } catch (err) {
-    throw new Error(getFriendlyErrorMessage(err));
+  if (auth && auth.currentUser && isFirebaseConfigured()) {
+    const user = auth.currentUser;
+    const credential = EmailAuthProvider.credential(user.email, currentPassword);
+    try {
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPassword);
+      return { success: true };
+    } catch (err) {
+      throw new Error(getFriendlyErrorMessage(err));
+    }
   }
+
+  // Local user change password
+  const active = getLocalActiveUser();
+  if (!active) throw new Error("No active user session.");
+  const users = getLocalUsers();
+  const userRecord = users[active.username];
+  if (!userRecord || userRecord.password !== currentPassword) {
+    throw new Error("Incorrect current password. Please try again.");
+  }
+  userRecord.password = newPassword;
+  users[active.username] = userRecord;
+  saveLocalUsers(users);
+  localStorage.setItem(LOCAL_ACTIVE_USER_KEY, JSON.stringify(userRecord));
+  return { success: true };
 }
 
 /**
  * Registers an auth state listener.
  */
 export function onAuthChange(callback) {
-  if (!auth) {
-    // If not configured, immediately inform callback
-    callback(null);
-    return () => {};
+  localAuthCallback = callback;
+  if (!isFirebaseConfigured() || !auth) {
+    // Check if a local user is logged in
+    const active = getLocalActiveUser();
+    setTimeout(() => {
+      if (active) {
+        callback({
+          uid: active.uid,
+          username: active.username,
+          email: active.email,
+          isLocal: true
+        });
+      } else {
+        callback(null);
+      }
+    }, 50);
+    return () => { localAuthCallback = null; };
   }
+
   return onAuthStateChanged(auth, (user) => {
     if (user) {
       callback({
         uid: user.uid,
         email: user.email,
-        username: fromSyntheticEmail(user.email)
+        username: fromSyntheticEmail(user.email),
+        isLocal: false
       });
     } else {
       callback(null);
